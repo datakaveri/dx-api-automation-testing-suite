@@ -4,7 +4,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Optional, List, Dict, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 import boto3
@@ -21,6 +21,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+DELETE_TYPES = ('gpkg', 'tif', 'both')
+
 
 @dataclass
 class S3Config:
@@ -29,11 +31,23 @@ class S3Config:
     region: str = 'us-east-1'
     aws_access_key_id: Optional[str] = None
     aws_secret_access_key: Optional[str] = None
+    # UUIDs to delete when none is given on the command line.
+    uuids: List[str] = field(default_factory=list)
+    # 'gpkg', 'tif' or 'both', for the uuids above.
+    delete_type: str = 'both'
+    # Skip the typed 'DELETE' prompt, as --confirm does.
+    auto_confirm: bool = False
+    # Find and report every object, delete nothing.
+    dry_run: bool = False
 
     def __post_init__(self):
         """Validate configuration."""
         if not self.bucket:
             raise ValueError("S3 bucket name is required")
+        if self.delete_type not in DELETE_TYPES:
+            raise ValueError(
+                f"delete_type must be one of {', '.join(DELETE_TYPES)}, not {self.delete_type!r}"
+            )
 
 
 class S3Deleter:
@@ -194,6 +208,10 @@ class S3Deleter:
         Returns:
             True if successful, False otherwise
         """
+        if self.config.dry_run:
+            logger.info(f"DRY RUN — would delete: {s3_key}")
+            return True
+
         try:
             # Get object size before deletion for stats
             try:
@@ -254,6 +272,7 @@ class S3Deleter:
         Returns:
             True if successful, False otherwise
         """
+        confirm = confirm or self.config.auto_confirm or self.config.dry_run
         gpkg_key = self._search_gpkg_by_uuid(uuid)
         
         if not gpkg_key:
@@ -298,6 +317,7 @@ class S3Deleter:
         Returns:
             True if successful, False otherwise
         """
+        confirm = confirm or self.config.auto_confirm or self.config.dry_run
         # Ensure folder prefix ends with /
         folder_prefix = f"{uuid}/" if not uuid.endswith('/') else uuid
         
@@ -376,7 +396,7 @@ class S3Deleter:
     def _print_summary(self) -> None:
         """Print deletion summary statistics."""
         logger.info("=" * 60)
-        logger.info("DELETION SUMMARY")
+        logger.info("DELETION SUMMARY" + (" (DRY RUN — nothing was deleted)" if self.config.dry_run else ""))
         logger.info("=" * 60)
         logger.info(f"GPKG files deleted: {self.stats['gpkg_deleted']}")
         logger.info(f"TIF files deleted: {self.stats['tif_deleted']}")
@@ -423,6 +443,12 @@ def load_config(config_file: str = 'config.json') -> S3Config:
             f"Missing required config in {config_path}: {', '.join(missing)}"
         )
 
+    uuids = data.get('uuids') or []
+    if isinstance(uuids, str):
+        uuids = [uuids]
+    if not isinstance(uuids, list):
+        raise ValueError(f"'uuids' in {config_path} must be a list of strings")
+
     logger.info(f"Loaded configuration from: {config_path}")
 
     return S3Config(
@@ -430,6 +456,9 @@ def load_config(config_file: str = 'config.json') -> S3Config:
         region=data['region'],
         aws_access_key_id=data['aws_access_key_id'],
         aws_secret_access_key=data['aws_secret_access_key'],
+        uuids=[str(uuid).strip() for uuid in uuids if str(uuid).strip()],
+        delete_type=str(data.get('delete_type') or 'both').strip().lower(),
+        auto_confirm=bool(data.get('auto_confirm', False)),
     )
 
 
@@ -473,19 +502,37 @@ def interactive_mode(deleter: S3Deleter):
 def main():
     """Main entry point."""
     try:
+        flags = {arg for arg in sys.argv[1:] if arg.startswith('-')}
+        positional = [arg for arg in sys.argv[1:] if not arg.startswith('-')]
+        unknown = flags - {'--confirm', '--yes', '-y', '--dry-run'}
+        if unknown:
+            raise ValueError(f"unknown option(s): {', '.join(sorted(unknown))}")
+
         config = load_config()
+        if flags & {'--confirm', '--yes', '-y'}:
+            config.auto_confirm = True
+        if '--dry-run' in flags:
+            config.dry_run = True
         deleter = S3Deleter(config)
 
         # Check if UUID is provided as command-line argument
-        if len(sys.argv) > 1:
-            uuid = sys.argv[1]
-            delete_type = sys.argv[2] if len(sys.argv) > 2 else 'both'
-            
-            # Optional: --confirm flag to skip confirmation
-            confirm = '--confirm' in sys.argv
-            
+        if positional:
+            uuid = positional[0]
+            delete_type = positional[1] if len(positional) > 1 else 'both'
+            if delete_type not in DELETE_TYPES:
+                raise ValueError(
+                    f"delete type must be one of {', '.join(DELETE_TYPES)}, not {delete_type!r}"
+                )
+
             logger.info(f"Deleting {delete_type} for UUID: {uuid}")
-            deleter.delete_by_uuid(uuid, delete_type=delete_type, confirm=confirm)
+            deleter.delete_by_uuid(uuid, delete_type=delete_type)
+            deleter._print_summary()
+        elif config.uuids:
+            # The uuids listed in config.json, with no prompt when
+            # auto_confirm is set.
+            for uuid in config.uuids:
+                logger.info(f"Deleting {config.delete_type} for UUID: {uuid}")
+                deleter.delete_by_uuid(uuid, delete_type=config.delete_type)
             deleter._print_summary()
         else:
             # Interactive mode

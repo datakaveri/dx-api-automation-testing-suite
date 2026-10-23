@@ -2,5 +2,8 @@
   "bucket": "<bucket-name>",
   "region": "<bucket-region>",
   "aws_access_key_id": "<aws-access-key-id>",
-  "aws_secret_access_key": "<aws-secret-access-key>"
+  "aws_secret_access_key": "<aws-secret-access-key>",
+  "uuids": [],
+  "delete_type": "both",
+  "auto_confirm": true
 }

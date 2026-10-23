@@ -13,7 +13,8 @@ CONTROLPLANE_Cleanup_Script/
 ├── cleanup_verify/         cleanup_verify.py         + cleanup_verify_config.json          check
 ├── item_deletion/          item_deletion.py          + item_deletion_config.json           endpoint
 ├── artefact_deletion/      artefact_deletion.py      + artefact_deletion_config.json       endpoint
-└── compute_credit_cleanup/ compute_credit_cleanup.py + compute_credit_cleanup_config.json  GAP
+├── compute_credit_cleanup/ compute_credit_cleanup.py + compute_credit_cleanup_config.json  GAP
+└── platform_provider_cleanup/ platform_provider_cleanup.py + platform_provider_cleanup_config.json  GAP
 ```
 
 **GAP** marks what the platform has no working DELETE endpoint for — these are
@@ -47,6 +48,7 @@ it. Everything in the right-hand column without an endpoint has a script.
 | Access request, credit/compute/asset request, subscription, app, feedback, delegation, resource server | DELETE exists, several soft-delete | Postman folders — or `artefact_deletion`; rows: `database_sweep` |
 | Credit balance of one consumer | `PUT /admin/user/credit/deduct` zeroes it, rows stay | `compute_credit_cleanup` |
 | Compute request, once granted | **none** — DELETE refuses anything but `pending`, and the admin PUT will not set `pending` | `compute_credit_cleanup` (deletes the `compute_role` row) |
+| Platform provider request, once granted | **none** — the withdraw DELETE refuses anything but `pending`, the admin PATCH refuses anything that is not pending; the next submit answers 409 | `platform_provider_cleanup` (deletes the `provider_requests` row, revokes `provider`) |
 | One consumer's credit rows (`credit_transactions`, `credit_requests`, `user_credits`, `kyc_transactions`) | **none** | `compute_credit_cleanup` — or `database_sweep` by prefix |
 | Consumer account | `DELETE /auth/user/delete` (self) | `user_creation/consumer/deletion` |
 | Org admin / provider account | **none** — self-delete refuses org admins | `keycloak_user_sweep` (`user_creation/*/deletion` for one) |
@@ -75,6 +77,7 @@ This is the order `complete_test.py` and `main/e2e.py` follow.
 | 7 | Policies, then the catalogue item | Postman 19 + 08, or `item_deletion` |
 | 7b | The collection's other DELETE folders | Postman, or `artefact_deletion` |
 | 7c | A consumer's balance, compute request and role, credit rows | `compute_credit_cleanup` |
+| 7d | A consumer's platform provider request and the `provider` role | `platform_provider_cleanup` |
 | 8 | Consumers (self-delete) | `consumer_deletion.py` |
 | 9 | Organisation | `organisation_deletion` (or `org_admin_deletion.py` with its admin) |
 | 10 | Every Keycloak account under the prefix | `keycloak_user_sweep` |
@@ -203,6 +206,61 @@ Rerunning is safe: each step reports "nothing to" when the account is already
 clean. If the same account is also driven by a Postman run at the same time,
 this script will delete that run's compute grant, so run it when nothing else
 is using the account.
+
+## platform_provider_cleanup
+
+Rolls one account's **platform** provider request back to before it was
+submitted, so the same account can go through the Platform Provider Requests
+folder again (`POST /auth/user/platform/provider-requests`, then the cos_admin
+`PATCH /auth/admin/platform/provider-requests/{id}`) without the submit answering
+`409 A pending or granted provider role request already exists for this user`.
+
+**Why there is no API way back.** The withdraw
+(`DELETE /auth/user/platform/provider-requests`) only takes a `pending` request
+(`400 Only pending platform provider role requests can be deleted`). The PATCH
+refuses any request that is no longer pending, so a grant cannot be turned
+into a rejection either. The submit's 409 check
+(`ProviderRoleServiceImpl.createProviderRequest` in dx-controlplane) counts every
+`pending` or `granted` row in `provider_requests` for the user, **org and
+platform alike**. A `rejected` row does not block.
+
+What the approval wrote, and what one run undoes:
+
+| Step | How | Needs |
+|---|---|---|
+| Delete the account's `platform` rows, **any status** | `DELETE FROM provider_requests WHERE id AND user_id AND provider_type`, in one transaction | `postgres` |
+| Take the `provider` realm role off | Keycloak Admin API, only when no org request or `organization_users` row still grants it | `keycloak.admin_client_*` |
+| Read back | the table, the cos_admin listing, the account's own GET (with a password), the realm roles | — |
+
+The approval writes nothing else that is state: nothing references
+`provider_requests`, and the emails and `user_activity_audit_log` rows are logs.
+KYC is left alone, because the rerun's submit needs it again. Exit `0` means a
+rerun's submit will not 409. Exit `1` means a blocking row is still there, and
+the run names it.
+
+**Org rows.** An `org` provider request also causes the 409, but it belongs to an
+organisation's provider flow, so by default the run only reports it.
+`--include-org` (`clean.include_org_requests`) deletes it as well. The role is
+then still kept while the account has an `organization_users` row, unless
+`clean.revoke_even_if_org_provider` is set.
+
+```bash
+cp platform_provider_cleanup_config.json.example platform_provider_cleanup_config.json
+# fill target.username (or user_id), keycloak.admin_client_*, postgres; cos_admin optional
+python platform_provider_cleanup.py --inventory-only   # rows, roles, and whether a submit would 409
+python platform_provider_cleanup.py --dry-run          # DB delete runs and rolls back: real counts
+python platform_provider_cleanup.py
+python platform_provider_cleanup.py --username someone@example.invalid
+```
+
+No password is needed. Without the `postgres` block the script falls back to
+the API: it can withdraw a pending request as the account (needs
+`target.password`), but a granted one is reported as left behind. `--keep-role`
+leaves the realm role in place. The account's existing tokens keep the role
+until they expire, and the collection's own sign-in mints a fresh one. Rerunning
+is safe, because an already-clean account reports nothing to delete. Do not run
+it while a Postman run is using the same account, or it will undo that run's
+grant mid-flow.
 
 ## keycloak_user_sweep
 
