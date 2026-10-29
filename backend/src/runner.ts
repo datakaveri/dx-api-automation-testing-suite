@@ -73,6 +73,33 @@ async function loadEnvironment(
   return structuredClone(parsed);
 }
 
+// Committed collection files hold ${VAR} / ${VAR:-fallback} placeholders; the secrets live in .env.
+// Same syntax the post-run Python scripts resolve; UPPER_CASE names only, so a JS template
+// literal like `${token}` in a script-valued variable is left alone. Returns resolved values for redaction.
+export function resolveEnvRefs(
+  entries: unknown,
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  if (!Array.isArray(entries)) return [];
+  const resolved: string[] = [];
+  for (const entry of entries) {
+    if (!isRecord(entry) || typeof entry.value !== "string" || !entry.value.includes("${"))
+      continue;
+    const value = entry.value.replaceAll(
+      /\$\{([A-Z_][A-Z0-9_]*)(?::-([^}]*))?\}/g,
+      (_match, name: string, fallback: string | undefined) => {
+        const found = env[name] ?? fallback;
+        if (found === undefined)
+          throw new Error(`Environment variable ${name} is not set (needed by "${String(entry.key)}"). Add it to .env.`);
+        return found;
+      },
+    );
+    if (value && value !== entry.value) resolved.push(value);
+    entry.value = value;
+  }
+  return resolved;
+}
+
 function environmentValue(
   environment: Record<string, unknown> | undefined,
   key: string,
@@ -108,7 +135,7 @@ function passwordStatePath(collectionsDir: string): string {
 
 async function writeControlPlanePassword(
   filePath: string,
-  passwords: { consumer_pass: string; new_password_value: string }, // gitleaks:allow
+  passwords: { consumer_pass: string; new_password_value: string },
 ): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
   const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
@@ -121,7 +148,7 @@ async function writeControlPlanePassword(
 }
 
 type ControlPlanePasswords = {
-  consumer_pass: string | undefined; // gitleaks:allow
+  consumer_pass: string | undefined;
   new_password_value: string | undefined;
 };
 
@@ -135,7 +162,7 @@ async function loadControlPlanePasswords(
   } catch (error) {
     if (!isRecord(error) || error.code !== "ENOENT") throw error;
     await writeControlPlanePassword(filePath, {
-      consumer_pass: fallback.consumer_pass ?? "", // gitleaks:allow
+      consumer_pass: fallback.consumer_pass ?? "",
       new_password_value: fallback.new_password_value ?? "",
     });
     return fallback;
@@ -152,16 +179,34 @@ async function loadControlPlanePasswords(
     );
   }
   return {
-    consumer_pass: parsed.consumer_pass || fallback.consumer_pass, // gitleaks:allow
+    consumer_pass: parsed.consumer_pass || fallback.consumer_pass,
     new_password_value: parsed.new_password_value || fallback.new_password_value,
   };
 }
+
+// Loads the rotated Control Plane passwords saved by the previous run into the environment.
+async function applyControlPlanePasswords(
+  environment: Record<string, unknown> | undefined,
+  passwordFile: string,
+  originalPasswords: ControlPlanePasswords,
+): Promise<void> {
+  const passwords = await loadControlPlanePasswords(passwordFile, originalPasswords);
+  if (passwords.consumer_pass !== undefined)
+    setEnvironmentValue(environment, "consumer_pass", passwords.consumer_pass);
+  if (passwords.new_password_value !== undefined)
+    setEnvironmentValue(environment, "new_password_value", passwords.new_password_value);
+}
+
+// Newman hands back untyped postman-collection objects (summary, executions, items, requests).
+// shortcut: one loose alias instead of real types, adopt @types/newman if these shapes grow.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type NewmanObject = any; // NOSONAR: deliberate loose alias, see shortcut above
 
 export function runNewman(
   collection: Record<string, unknown>,
   environment: Record<string, unknown> | undefined,
   workingDir: string,
-): Promise<any> {
+): Promise<NewmanObject> {
   return new Promise((resolve, reject) => {
     let finalEnvironment: Record<string, unknown> | undefined;
     let finalCollection: Record<string, unknown> | undefined;
@@ -233,24 +278,27 @@ function environmentValues(
   collection: Record<string, unknown> | undefined,
 ): Record<string, string> {
   const result: Record<string, string> = {};
-  if (environment && Array.isArray(environment.values))
-    for (const entry of environment.values.filter(isRecord)) {
-      if (typeof entry.key === "string" && entry.enabled !== false)
-        result[`env.${entry.key}`] =
-          entry.value === undefined || entry.value === null
-            ? ""
-            : String(entry.value);
-    }
-  if (Array.isArray(collection?.variable)) {
-    for (const entry of collection.variable.filter(isRecord)) {
-      if (typeof entry.key === "string" && entry.enabled !== false)
-        result[`collection.${entry.key}`] =
-          entry.value === undefined || entry.value === null
-            ? ""
-            : String(entry.value);
-    }
-  }
+  addVariables(result, "env", environment?.values);
+  addVariables(result, "collection", collection?.variable);
   return result;
+}
+
+function addVariables(
+  result: Record<string, string>,
+  prefix: string,
+  list: unknown,
+): void {
+  if (!Array.isArray(list)) return;
+  for (const entry of list.filter(isRecord)) {
+    if (typeof entry.key === "string" && entry.enabled !== false)
+      result[`${prefix}.${entry.key}`] = variableText(entry.value);
+  }
+}
+
+function variableText(value: unknown): string {
+  if (value === undefined || value === null) return "";
+  // Numbers and booleans stringify the same as String(); objects become JSON.
+  return typeof value === "string" ? value : JSON.stringify(value);
 }
 
 function resolveTemplate(
@@ -259,7 +307,7 @@ function resolveTemplate(
   stepName: string,
 ): string {
   return value
-    .replace(
+    .replaceAll(
       /\{\{\s*(env\.)?([A-Za-z0-9_.-]+)\s*\}\}/g,
       (_match, prefix: string | undefined, key: string) => {
         const lookupKey = prefix ? `env.${key}` : key;
@@ -271,7 +319,7 @@ function resolveTemplate(
         return resolved;
       },
     )
-    .replace(/\{\{[^{}]*\}\}/g, (placeholder) => {
+    .replaceAll(/\{\{[^{}]*\}\}/g, (placeholder) => {
       throw new Error(
         `Post-run step "${stepName}" contains unsupported template "${placeholder}".`,
       );
@@ -321,7 +369,7 @@ function runPostRunStep(
     const useShell = step.shell ?? process.platform === "win32";
     const commandLine = useShell
       ? [step.command, ...args]
-          .map((part) => `"${part.replace(/"/g, '\\"')}"`)
+          .map((part) => `"${part.replaceAll('"', ESCAPED_QUOTE)}"`)
           .join(" ")
       : step.command;
     const child = spawn(commandLine, useShell ? [] : args, {
@@ -359,11 +407,10 @@ function runPostRunStep(
           });
         return resolve();
       }
-      const detail = safeStderr;
+      const reason = signal ? `signal ${signal}` : `code ${code}`;
+      const detail = safeStderr ? ` ${safeStderr}` : "";
       reject(
-        new Error(
-          `Post-run step "${step.name}" exited with ${signal ? `signal ${signal}` : `code ${code}`}.${detail ? ` ${detail}` : ""}`,
-        ),
+        new Error(`Post-run step "${step.name}" exited with ${reason}.${detail}`),
       );
     });
   });
@@ -395,11 +442,9 @@ function runCommand(
     child.on("error", reject);
     child.on("close", (code, signal) => {
       if (code === 0) return resolve({ stdout, stderr });
-      reject(
-        new Error(
-          `${command} ${args.join(" ")} exited with ${signal ? `signal ${signal}` : `code ${code}`}.${stderr.trim() ? ` ${stderr.trim()}` : ""}`,
-        ),
-      );
+      const reason = signal ? `signal ${signal}` : `code ${code}`;
+      const detail = stderr.trim() ? ` ${stderr.trim()}` : "";
+      reject(new Error(`${command} ${args.join(" ")} exited with ${reason}.${detail}`));
     });
   });
 }
@@ -486,6 +531,27 @@ async function preparePythonEnvironment(
   return pythonPath;
 }
 
+function resolveExports(
+  exports: Record<string, string>,
+  values: Record<string, string>,
+): void {
+  for (const [outputName, source] of Object.entries(exports)) {
+    const match = /^(environment|collection)\.([A-Za-z0-9_.-]+)$/.exec(source);
+    if (!match)
+      throw new Error(
+        `Invalid post-run export source "${source}" for "${outputName}".`,
+      );
+    const scope = match[1] === "environment" ? "env" : "collection";
+    const value = values[`${scope}.${match[2]}`];
+    if (value === undefined || value === null || String(value).length === 0) {
+      throw new Error(
+        `Post-run export "${outputName}" requires ${match[1]} value "${match[2]}".`,
+      );
+    }
+    values[outputName] = String(value);
+  }
+}
+
 async function runPostRunManifest(
   collectionsDir: string,
   descriptor: CollectionDescriptor,
@@ -503,21 +569,7 @@ async function runPostRunManifest(
   if (!isRecord(parsed) || !Array.isArray(parsed.steps))
     throw new Error("Post-run manifest is invalid.");
   const manifest = parsed as unknown as PostRunManifest;
-  for (const [outputName, source] of Object.entries(manifest.export ?? {})) {
-    const match = source.match(/^(environment|collection)\.([A-Za-z0-9_.-]+)$/);
-    if (!match)
-      throw new Error(
-        `Invalid post-run export source "${source}" for "${outputName}".`,
-      );
-    const scope = match[1] === "environment" ? "env" : "collection";
-    const value = values[`${scope}.${match[2]}`];
-    if (value === undefined || value === null || String(value).length === 0) {
-      throw new Error(
-        `Post-run export "${outputName}" requires ${match[1]} value "${match[2]}".`,
-      );
-    }
-    values[outputName] = String(value);
-  }
+  resolveExports(manifest.export ?? {}, values);
   const workingDir = path.join(collectionsDir, descriptor.folderPath);
   const pythonPath = manifest.python
     ? await preparePythonEnvironment(
@@ -551,7 +603,7 @@ async function runPostRunManifest(
 
 // Folder path from the request's own parent groups. Positions in the collection can't be
 // used: requests skipped or repeated by postman.setNextRequest() shift every later index.
-function folderOf(item: any): string | null | undefined {
+function folderOf(item: NewmanObject): string | null | undefined {
   if (typeof item?.parent !== "function") return undefined;
   const names: string[] = [];
   let group = item.parent();
@@ -567,16 +619,17 @@ function folderOf(item: any): string | null | undefined {
 const CREDENTIAL_HEADERS = /^(authorization|proxy-authorization|cookie|x-api-key)$/i;
 const SENSITIVE_FIELD = /pass|secret|token|api[-_]?key/i;
 const MAX_BODY_CHARS = 20_000;
+const ESCAPED_QUOTE = String.raw`\"`;
 
-function sentHeaders(request: any, secrets: string[]): Array<{ key: string; value: string }> {
+function sentHeaders(request: NewmanObject, secrets: string[]): Array<{ key: string; value: string }> {
   const headers = typeof request?.headers?.all === "function" ? request.headers.all() : [];
   return headers
-    .filter((header: any) => header && !header.disabled)
-    .map((header: any) => {
+    .filter((header: NewmanObject) => header && !header.disabled)
+    .map((header: NewmanObject) => {
       const key = String(header.key);
       const value = String(header.value ?? "");
       if (!CREDENTIAL_HEADERS.test(key)) return { key, value: redact(value, secrets) ?? "" };
-      const scheme = value.match(/^(Bearer|Basic|Digest)\s/i)?.[1];
+      const scheme = /^(Bearer|Basic|Digest)\s/i.exec(value)?.[1];
       return { key, value: scheme ? `${scheme} [REDACTED]` : "[REDACTED]" };
     });
 }
@@ -589,15 +642,16 @@ function maskSensitiveFields(value: unknown): unknown {
   );
 }
 
-function sentBody(request: any, secrets: string[]): string | null {
+function sentBody(request: NewmanObject, secrets: string[]): string | null {
   const body = request?.body;
   if (!body || body.disabled || !body.mode) return null;
-  const fields = (list: any) =>
+  const fields = (list: NewmanObject) =>
     (typeof list?.all === "function" ? list.all() : [])
-      .filter((field: any) => !field.disabled)
-      .map((field: any) => {
-        const value = SENSITIVE_FIELD.test(String(field.key)) ? "[REDACTED]" : field.type === "file" ? `@${field.src ?? "file"}` : (field.value ?? "");
-        return `${field.key}=${value}`;
+      .filter((field: NewmanObject) => !field.disabled)
+      .map((field: NewmanObject) => {
+        if (SENSITIVE_FIELD.test(String(field.key))) return `${field.key}=[REDACTED]`;
+        if (field.type === "file") return `${field.key}=@${field.src ?? "file"}`;
+        return `${field.key}=${field.value ?? ""}`;
       })
       .join("&");
 
@@ -623,15 +677,15 @@ function sentBody(request: any, secrets: string[]): string | null {
 
 // postman.setNextRequest() can run one request several times (polling, cleanup loops). A test
 // is one collection request, so keep each request's final run, in the order requests first ran.
-function finalRunPerRequest(executions: any[]): any[] {
-  const byRequest = new Map<unknown, any>();
+function finalRunPerRequest(executions: NewmanObject[]): NewmanObject[] {
+  const byRequest = new Map<unknown, NewmanObject>();
   for (const execution of executions)
     byRequest.set(execution.item?.id ?? execution.item ?? execution, execution);
   return [...byRequest.values()];
 }
 
 export function normaliseResult(
-  summary: any,
+  summary: NewmanObject,
   collection: Record<string, unknown>,
   secrets: string[],
   startedAt: Date,
@@ -640,7 +694,7 @@ export function normaliseResult(
   const executions: ExecutionResult[] = finalRunPerRequest(
     summary?.run?.executions ?? [],
   ).map(
-    (execution: any) => {
+    (execution: NewmanObject) => {
       const itemName = String(execution.item?.name ?? "Unnamed request");
       const folder =
         folderOf(execution.item) ??
@@ -653,14 +707,14 @@ export function normaliseResult(
 
       // Requests without test scripts get one status check, expecting the code in the request
       // name (e.g. "Get Item 404"), or 200 when the name has none.
-      const matchExpectedCode = itemName.match(
-        /\b(200|201|202|204|400|401|403|404|415)\b/,
+      const matchExpectedCode = /\b(200|201|202|204|400|401|403|404|415)\b/.exec(
+        itemName,
       );
       const expectedStatus = matchExpectedCode
-        ? parseInt(matchExpectedCode[1], 10)
+        ? Number.parseInt(matchExpectedCode[1], 10)
         : 200;
 
-      let responseSize: number | null = null;
+      let responseSize: number | null;
       try {
         responseSize = execution.response?.size?.().body ?? null;
       } catch {
@@ -674,7 +728,7 @@ export function normaliseResult(
 
       // Newman's verdict is authoritative: an assertion passes only if its test script passed.
       const assertions: AssertionResult[] = (execution.assertions ?? []).map(
-        (assertion: any) => ({
+        (assertion: NewmanObject) => ({
           name: String(assertion.assertion ?? "Unnamed assertion"),
           passed: !assertion.error && !requestError,
           errorMessage: redact(assertion.error?.message ?? null, secrets),
@@ -764,10 +818,10 @@ export function normaliseResult(
 }
 
 export class RunManager {
-  private queue: { descriptor: CollectionDescriptor; done: () => void }[] = [];
+  private readonly queue: { descriptor: CollectionDescriptor; done: () => void }[] = [];
   private activeRuns = 0;
-  private reservedCollections = new Set<string>();
-  private inFlight = new Map<string, Promise<void>>();
+  private readonly reservedCollections = new Set<string>();
+  private readonly inFlight = new Map<string, Promise<void>>();
 
   constructor(
     private readonly collectionsDir: string,
@@ -955,6 +1009,29 @@ export class RunManager {
     }
   }
 
+  private async persistPassword(
+    collectionId: string,
+    file: string,
+    password: string,
+  ): Promise<void> {
+    try {
+      await writeControlPlanePassword(file, {
+        consumer_pass: password,
+        new_password_value: password,
+      });
+      this.logger.info("Persisted successful Control Plane password change", {
+        collectionId,
+        file,
+      });
+    } catch (error) {
+      this.logger.error("Could not persist updated Control Plane password", {
+        collectionId,
+        file,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   private async execute(descriptor: CollectionDescriptor): Promise<void> {
     const startedAt = new Date();
 
@@ -966,46 +1043,37 @@ export class RunManager {
         descriptor.folderPath,
         descriptor.environmentFile,
       );
+      const collection = structuredClone(descriptor.collection);
+      const envSecrets = [
+        ...resolveEnvRefs(environment?.values),
+        ...resolveEnvRefs(collection.variable),
+      ];
       const controlPlanePasswordFile =
         descriptor.folderName === "Control Plane"
           ? passwordStatePath(this.collectionsDir)
           : null;
       const originalPasswords = {
-        consumer_pass: environmentValue(environment, "consumer_pass"), // gitleaks:allow
+        consumer_pass: environmentValue(environment, "consumer_pass"),
         new_password_value: environmentValue(environment, "new_password_value"),
       };
-      if (controlPlanePasswordFile) {
-        const passwords = await loadControlPlanePasswords(
+      if (controlPlanePasswordFile)
+        await applyControlPlanePasswords(
+          environment,
           controlPlanePasswordFile,
           originalPasswords,
         );
-        if (passwords.consumer_pass !== undefined)
-          setEnvironmentValue(
-            environment,
-            "consumer_pass",
-            passwords.consumer_pass,
-          );
-        if (passwords.new_password_value !== undefined)
-          setEnvironmentValue(
-            environment,
-            "new_password_value",
-            passwords.new_password_value,
-          );
-      }
       const currentPasswordBeforeRun = environmentValue(
         environment,
         "consumer_pass",
       );
-      const initialSecrets = redactableValues(environment ?? null);
+      const initialSecrets = [
+        ...redactableValues(environment ?? null),
+        ...envSecrets,
+      ].sort((a, b) => b.length - a.length);
       const workingDir = path.join(this.collectionsDir, descriptor.folderPath);
-      const summary = await runNewman(
-        descriptor.collection,
-        environment,
-        workingDir,
-      );
+      const summary = await runNewman(collection, environment, workingDir);
       const finalEnvironment = summary?.environment?.toJSON?.() ?? environment;
-      const finalCollection =
-        summary?.collection?.toJSON?.() ?? descriptor.collection;
+      const finalCollection = summary?.collection?.toJSON?.() ?? collection;
       const finalPassword = environmentValue(finalEnvironment, "consumer_pass");
       const finalNewPassword = environmentValue(finalEnvironment, "new_password_value");
       const passwordChangeSucceeded = Boolean(
@@ -1015,27 +1083,8 @@ export class RunManager {
           finalPassword === finalNewPassword &&
           finalPassword !== currentPasswordBeforeRun,
       );
-      if (controlPlanePasswordFile && passwordChangeSucceeded && finalPassword) {
-        try {
-          await writeControlPlanePassword(
-            controlPlanePasswordFile,
-            {
-              consumer_pass: finalPassword, // gitleaks:allow
-              new_password_value: finalPassword,
-            },
-          );
-          this.logger.info("Persisted successful Control Plane password change", {
-            collectionId: descriptor.id,
-            file: controlPlanePasswordFile,
-          });
-        } catch (error) {
-          this.logger.error("Could not persist updated Control Plane password", {
-            collectionId: descriptor.id,
-            file: controlPlanePasswordFile,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
+      if (controlPlanePasswordFile && passwordChangeSucceeded && finalPassword)
+        await this.persistPassword(descriptor.id, controlPlanePasswordFile, finalPassword);
       const secrets = [
         ...new Set([
           ...initialSecrets,
@@ -1053,7 +1102,7 @@ export class RunManager {
       }
       const result = normaliseResult(
         summary,
-        descriptor.collection,
+        collection,
         secrets,
         startedAt,
       );

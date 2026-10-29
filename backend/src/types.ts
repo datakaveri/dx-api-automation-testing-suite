@@ -1,4 +1,9 @@
-export type CollectionStatus = "idle" | "running" | "passed" | "failed" | "error";
+export type CollectionStatus =
+  | "idle"
+  | "running"
+  | "passed"
+  | "failed"
+  | "error";
 
 export interface AssertionResult {
   name: string;
@@ -111,7 +116,12 @@ export interface CollectionLatestRunResponse {
     endpoints: EndpointResult[];
   };
   meta: {
-    filters: { search: string; status: "all" | "passed" | "failed"; method: string; folder: string };
+    filters: {
+      search: string;
+      status: "all" | "passed" | "failed";
+      method: string;
+      folder: string;
+    };
     totalItems: number;
     page: number;
     pageSize: number;

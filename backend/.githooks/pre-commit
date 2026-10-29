@@ -1,0 +1,33 @@
+#!/bin/sh
+# Blocks a commit that adds a secret. Enabled by `npm install` (the prepare
+# script sets core.hooksPath to .githooks).
+#
+# Scans the full staged content of every changed file, not only the diff:
+# pasting a password into an existing Postman "value" line leaves its "key"
+# line out of the diff, and the diff alone would not match. Archives (zip, jar,
+# tar.gz) are opened, and "gitleaks:allow" comments are not honoured.
+set -eu
+
+if ! gitleaks dir --help >/dev/null 2>&1; then
+  echo "pre-commit: gitleaks >= 8.19 is required to commit in this repo." >&2
+  echo "  Install: https://github.com/gitleaks/gitleaks#installing (brew/pacman/apt/scoop or release binary)" >&2
+  exit 1
+fi
+
+root=$(git rev-parse --show-toplevel)
+staged=$(mktemp -d)
+trap 'rm -rf "$staged"' EXIT
+
+# Reads the index git is committing: also correct for `commit -a` and
+# `commit <path>`, which hand the hook a temporary index via GIT_INDEX_FILE.
+git diff --cached --name-only --diff-filter=ACMR -z |
+  git checkout-index --prefix="$staged/" -z --stdin
+
+if ! (cd "$staged" && gitleaks dir . --config "$root/.gitleaks.toml" -i "$root" \
+  --ignore-gitleaks-allow --max-archive-depth 3 --redact --no-banner -v); then
+  echo "" >&2
+  echo "pre-commit: SECRET DETECTED - commit blocked." >&2
+  echo "  Move the value to .env and reference it as \${VAR} (configs, Postman env files)" >&2
+  echo "  or {{var}} (Postman requests)." >&2
+  exit 1
+fi

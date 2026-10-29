@@ -6,28 +6,28 @@ import type { CollectionDescriptor, PostRunManifest, SkippedFile } from "./types
 export function slugify(value: string): string {
   return value
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
+    .replaceAll(/[^a-z0-9]+/g, "-")
+    .replaceAll(/(^-)|(-$)/g, "");
 }
 
-const collectionSchema = z.object({
-  info: z.object({ name: z.string().optional() }).passthrough(),
+const collectionSchema = z.looseObject({
+  info: z.looseObject({ name: z.string().optional() }),
   item: z.array(z.unknown())
-}).passthrough();
+});
 
-const environmentSchema = z.object({ values: z.array(z.unknown()) }).passthrough();
-const postRunSchema = z.object({
+const environmentSchema = z.looseObject({ values: z.array(z.unknown()) });
+const postRunSchema = z.looseObject({
   export: z.record(z.string(), z.string()).optional(),
   ignoreFiles: z.array(z.string()).optional(),
   python: z.object({ requirements: z.string().min(1) }).optional(),
-  steps: z.array(z.object({
+  steps: z.array(z.looseObject({
     name: z.string().min(1),
     command: z.string().min(1),
     args: z.array(z.string()),
     shell: z.boolean().optional(),
     env: z.record(z.string(), z.string()).optional()
-  }).passthrough())
-}).passthrough();
+  }))
+});
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -158,10 +158,15 @@ export async function scanCatalog(collectionsDir: string): Promise<Catalog> {
 
   }
 
-  return {
-    collections: collections.sort((a, b) => a.folderName.localeCompare(b.folderName)),
-    skipped: skipped.sort((a, b) => `${a.folderName ?? ""}/${a.fileName}`.localeCompare(`${b.folderName ?? ""}/${b.fileName}`))
-  };
+  collections.sort((a, b) => a.folderName.localeCompare(b.folderName));
+  skipped.sort((a, b) => `${a.folderName ?? ""}/${a.fileName}`.localeCompare(`${b.folderName ?? ""}/${b.fileName}`));
+  return { collections, skipped };
+}
+
+function requestUrl(request: Record<string, unknown>): string {
+  if (typeof request.url === "string") return request.url;
+  if (isRecord(request.url) && typeof request.url.raw === "string") return request.url.raw;
+  return "";
 }
 
 export function flattenRequests(collection: Record<string, unknown>): Array<{ folder: string | null; name: string; method: string; url: string }> {
@@ -174,13 +179,7 @@ export function flattenRequests(collection: Record<string, unknown>): Array<{ fo
       const name = typeof item.name === "string" ? item.name : "Unnamed request";
       if (isRecord(item.request)) {
         const method = typeof item.request.method === "string" ? item.request.method : "GET";
-        let url = "";
-        if (typeof item.request.url === "string") {
-          url = item.request.url;
-        } else if (isRecord(item.request.url) && typeof item.request.url.raw === "string") {
-          url = item.request.url.raw;
-        }
-        flattened.push({ folder: folders.length ? folders.join(" / ") : null, name, method, url });
+        flattened.push({ folder: folders.length ? folders.join(" / ") : null, name, method, url: requestUrl(item.request) });
       }
       visit(item.item, [...folders, name]);
     }

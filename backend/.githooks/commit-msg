@@ -1,0 +1,17 @@
+#!/bin/sh
+# Blocks a commit whose message contains a secret (pasted tokens, URLs with
+# credentials). Messages are pushed to GitHub like any file.
+set -eu
+
+if ! gitleaks dir --help >/dev/null 2>&1; then
+  echo "commit-msg: gitleaks >= 8.19 is required to commit in this repo." >&2
+  exit 1
+fi
+
+root=$(git rev-parse --show-toplevel)
+if ! gitleaks stdin --config "$root/.gitleaks.toml" --ignore-gitleaks-allow \
+  --redact --no-banner -v <"$1"; then
+  echo "" >&2
+  echo "commit-msg: SECRET DETECTED in the commit message - commit blocked." >&2
+  exit 1
+fi

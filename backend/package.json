@@ -6,27 +6,38 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "tsx src/index.ts",
-    "test": "node --import tsx --test test/*.test.ts"
+    "test": "node --import tsx --test test/*.test.ts",
+    "prepare": "git config core.hooksPath .githooks || exit 0"
   },
   "dependencies": {
-    "dotenv": "^16.6.1",
-    "express": "^5.1.0",
-    "newman": "^6.2.1",
-    "newman-reporter-htmlextra": "^1.23.1",
-    "nodemailer": "^10.0.14",
-    "pg": "^8.23.0",
+    "dotenv": "^18.0.9",
+    "express": "^5.3.0",
+    "newman": "^6.2.3",
+    "nodemailer": "^10.2.1",
+    "pg": "^8.23.1",
     "pg-hstore": "^2.3.4",
     "sequelize": "^6.37.8",
     "swagger-ui-express": "^5.0.1",
-    "tsx": "^4.19.4",
+    "tsx": "^4.23.15",
     "winston": "^3.19.0",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@types/express": "^5.0.3",
-    "@types/node": "^22.15.30",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.20.5",
     "@types/nodemailer": "^8.0.2",
     "@types/swagger-ui-express": "^4.1.8",
-    "typescript": "^5.8.3"
+    "typescript": "^6.0.3"
+  },
+  "overrides": {
+    "csv-parse": "^7.0.3",
+    "flatted": "^3.4.4",
+    "handlebars": "^4.7.10",
+    "jose": "^4.15.9",
+    "lodash": "^4.18.1",
+    "node-forge": "^1.4.0",
+    "qs": "^6.16.1",
+    "underscore": "^1.13.8",
+    "uuid": "^11.1.1"
   }
 }

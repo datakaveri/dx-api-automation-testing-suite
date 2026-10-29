@@ -262,7 +262,7 @@ const controlPlane = {
       name: "Authentication (AAA)",
       item: [
         makeReq("OpenID Configuration Discovery", "GET", "https://{{keycloak-url}}/auth/realms/iudx-v2/.well-known/openid-configuration", 200),
-        makeReq("Generate AAA Master Token", "POST", "https://{{control-plane-url}}/auth/v2/token", 200, { client_id: "{{client_id}}", client_secret: "{{client_secret}}", grant_type: "client_credentials" }), // gitleaks:allow
+        makeReq("Generate AAA Master Token", "POST", "https://{{control-plane-url}}/auth/v2/token", 200, { client_id: "{{client_id}}", client_secret: "{{client_secret}}", grant_type: "client_credentials" }),
         makeReq("Verify Token Introspection", "POST", "https://{{control-plane-url}}/auth/v2/token/introspect", 200, { token: "{{consumerToken}}" }),
         makeReq("Revoke Access Token", "POST", "https://{{control-plane-url}}/auth/v2/token/revoke", 200, { token: "{{consumerToken}}" }),
         makeReq("Register New User", "POST", "https://{{control-plane-url}}/auth/v2/users", 201, { email: "user@example.org", role: "consumer", name: "IUDX Consumer" }),
@@ -552,7 +552,7 @@ const ogcGeospatial = {
         makeReq("Get 3D Terrain Mesh Tile (z=12)", "GET", "https://{{ogc-url}}/ogc/v1/terrain/tiles/12/2910/1810.terrain", 200),
         makeReq("404 Vector Tile Out of Range", "GET", "https://{{ogc-url}}/ogc/v1/collections/pune_roads/tiles/WebMercatorQuad/28/9999999/9999999.mvt", 404),
         makeReq("400 Invalid Tile Matrix Identifier", "GET", "https://{{ogc-url}}/ogc/v1/collections/pune_roads/tiles/InvalidMatrix/14/11640/7240.mvt", 400),
-        makeReq("Purge Tile Cache by Bounding Box", "POST", "https://{{ogc-url}}/ogc/v1/tiles/cache/purge", 200, { bbox: [73.75, 18.45, 73.95, 18.60] })
+        makeReq("Purge Tile Cache by Bounding Box", "POST", "https://{{ogc-url}}/ogc/v1/tiles/cache/purge", 200, { bbox: [73.75, 18.45, 73.95, 18.6] })
       ]
     },
     {

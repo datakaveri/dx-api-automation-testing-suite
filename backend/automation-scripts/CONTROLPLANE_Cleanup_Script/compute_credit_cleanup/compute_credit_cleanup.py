@@ -76,6 +76,14 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+# The sweep SQL lives with the harness, as for database_sweep.py.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from ControlPlane_Workflow.cleanup import (  # noqa: E402
+    SWEEP_STATEMENTS,
+    _adapt_to_schema,
+    _schema_columns,
+)
+
 try:
     import requests
 except ModuleNotFoundError:  # allows --help before install
@@ -100,105 +108,6 @@ DB_ONLY_TABLES = (
     "user_credits",
     "kyc_transactions",
 )
-
-# These are the account-scoped rows left after API cleanup. Keep every delete
-# anchored to user_id so a missing/renamed ownership column can never widen a
-# cleanup into a table-wide delete.
-SWEEP_STATEMENTS: list[tuple[str, str]] = [
-    ("credit_transactions", "DELETE FROM {schema}.credit_transactions WHERE user_id = ANY(%(user_ids)s::uuid[])"),
-    ("credit_requests", "DELETE FROM {schema}.credit_requests WHERE user_id = ANY(%(user_ids)s::uuid[])"),
-    ("user_credits", "DELETE FROM {schema}.user_credits WHERE user_id = ANY(%(user_ids)s::uuid[])"),
-    ("kyc_transactions", "DELETE FROM {schema}.kyc_transactions WHERE user_id = ANY(%(user_ids)s::uuid[])"),
-]
-
-_COLUMN_REF = re.compile(r"(\w+)\s*(?:=|LIKE)\s*(?:ANY\s*\()?\s*%\(")
-
-
-def _split_top_level(clause: str, separator: str) -> list[str]:
-    """Split on a separator only where parentheses are balanced."""
-    parts: list[str] = []
-    depth = 0
-    current: list[str] = []
-    i = 0
-    while i < len(clause):
-        char = clause[i]
-        if char == "(":
-            depth += 1
-        elif char == ")":
-            depth -= 1
-        if depth == 0 and clause[i:i + len(separator)].upper() == separator.upper():
-            parts.append("".join(current))
-            current = []
-            i += len(separator)
-            continue
-        current.append(char)
-        i += 1
-    parts.append("".join(current))
-    return [part.strip() for part in parts if part.strip()]
-
-
-def _wraps_all(clause: str) -> bool:
-    if not (clause.startswith("(") and clause.endswith(")")):
-        return False
-    depth = 0
-    for index, char in enumerate(clause):
-        if char == "(":
-            depth += 1
-        elif char == ")":
-            depth -= 1
-            if depth == 0:
-                return index == len(clause) - 1
-    return False
-
-
-def _schema_columns(cursor, schema: str) -> dict[str, set[str]] | None:
-    """Return columns for the target schema, or None if introspection fails."""
-    try:
-        cursor.execute(
-            "SELECT table_name, column_name FROM information_schema.columns "
-            "WHERE table_schema = %(schema)s",
-            {"schema": schema},
-        )
-    except Exception:  # noqa: BLE001 - keep the sweep guarded if introspection is unavailable
-        cursor.connection.rollback()
-        return None
-    columns: dict[str, set[str]] = {}
-    for table, column in cursor.fetchall():
-        columns.setdefault(table, set()).add(column)
-    return columns
-
-
-def _adapt_to_schema(sql: str, schema: str, columns: dict[str, set[str]]):
-    """Return a schema-compatible delete, or None when its user anchor is absent."""
-    match = re.match(
-        r"\s*DELETE FROM %s\.(\w+)\s+WHERE\s+(.*)" % re.escape(schema),
-        sql,
-        re.S | re.I,
-    )
-    if not match:
-        return sql, []
-    table, where = match.group(1), match.group(2)
-    if table not in columns:
-        return None, []
-
-    present = columns[table]
-    groups: list[str] = []
-    dropped: list[str] = []
-    for group in _split_top_level(where, " AND "):
-        wrapped = _wraps_all(group)
-        inner = group[1:-1].strip() if wrapped else group
-        kept: list[str] = []
-        for term in _split_top_level(inner, " OR "):
-            missing = [column for column in _COLUMN_REF.findall(term) if column not in present]
-            if missing:
-                dropped.extend(missing)
-            else:
-                kept.append(term)
-        if not kept:
-            return None, dropped
-        joined = " OR ".join(kept)
-        groups.append(f"({joined})" if len(kept) > 1 else joined)
-    return f"DELETE FROM {schema}.{table} WHERE {' AND '.join(groups)}", dropped
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "control_plane": {

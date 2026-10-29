@@ -11,6 +11,26 @@ const emptyStats = (): RunStats => ({
   averageResponseTimeMs: 0
 });
 
+// Rows written by older versions can lack stat groups (e.g. `tests`); fill them so readers can trust RunStats.
+export const normalizeStats = (stats: Partial<RunStats> | null | undefined): RunStats => {
+  const empty = emptyStats();
+  return {
+    requests: { ...empty.requests, ...stats?.requests },
+    assertions: { ...empty.assertions, ...stats?.assertions },
+    tests: { ...empty.tests, ...stats?.tests },
+    averageResponseTimeMs: stats?.averageResponseTimeMs ?? 0
+  };
+};
+
+export const normalizeState = (state: CollectionState): CollectionState => ({
+  ...state,
+  stats: state.stats ? normalizeStats(state.stats) : null,
+  result: state.result
+    ? { ...state.result, stats: normalizeStats(state.result.stats), executions: state.result.executions ?? [] }
+    : null,
+  history: state.history?.map((run) => ({ ...run, stats: normalizeStats(run.stats), executions: run.executions ?? [] }))
+});
+
 const idleState = (): CollectionState => ({
   status: "idle",
   lastRunAt: null,
@@ -27,7 +47,7 @@ export class SequelizeResultsStore implements ResultsStorePort {
 
   async load(): Promise<void> {
     const rows = await this.model.findAll();
-    this.collections = Object.fromEntries(rows.map((row) => [row.collectionId, row.state]));
+    this.collections = Object.fromEntries(rows.map((row) => [row.collectionId, normalizeState(row.state)]));
   }
 
   get(id: string): CollectionState {
