@@ -130,6 +130,7 @@ They live in [`automation-scripts/`](automation-scripts/) and are listed, in ord
 | 2 | Clean up compute data | [`compute_credit_cleanup.py`](automation-scripts/CONTROLPLANE_Cleanup_Script/compute_credit_cleanup/compute_credit_cleanup.py) | The test consumer's compute role, credit balance and credit requests, so "grant role / add credits" can be tested again. |
 | 3 | Clean up platform provider data | [`platform_provider_cleanup.py`](automation-scripts/CONTROLPLANE_Cleanup_Script/platform_provider_cleanup/platform_provider_cleanup.py) | An approved "become a platform provider" request. The API has no undo for an approval, so the script rolls it back so the request can be made again. |
 | 4 | Clean up NGSI-LD data | [`ngsild_delete_v1.py`](automation-scripts/NGSILD_Automation_Script/ngsild_delete_v1.py) | For each data item the run created: its Elasticsearch index (stored documents), its RabbitMQ exchange (message channel) and the RabbitMQ user created for it. |
+| 5 | Clean up gateway queue and user (optional) | [`delete_rmq.py`](automation-scripts/GATEWAY_Automation_Script/delete_rmq.py) | The gateway adaptor's RabbitMQ queue and broker user named in its `config.ini`. Off by default: runs only when `.env` has `RUN_GATEWAY_CLEANUP=true`. |
 
 **How the scripts get their inputs:**
 - `post-run.json` has an **`export`** list. It picks values out of the finished run (e.g. the id of the organisation request just created) and hands them to the scripts as `--request-id`, `--exchange`, etc.
@@ -140,7 +141,7 @@ They live in [`automation-scripts/`](automation-scripts/) and are listed, in ord
 - `--dry-run`: shows what it *would* do without changing anything.
 - `--inventory-only` (compute / platform provider scripts): only reads and reports.
 
-**The Python environment:** the scripts need two Python libraries, listed in [`collections/Control Plane/requirements.txt`](collections/Control%20Plane/requirements.txt) (`requests` for API calls, `psycopg2` for the database). Locally, the server creates a private Python environment in `.post-run-venvs/` the first time and installs them. In Docker they are pre-installed in the image at `/opt/post-run-venvs/`.
+**The Python environment:** the scripts need three Python libraries, listed in [`collections/Control Plane/requirements.txt`](collections/Control%20Plane/requirements.txt) (`requests` for API calls, `psycopg2` for the database, `pika` for RabbitMQ). Locally, the server creates a private Python environment in `.post-run-venvs/` the first time and installs them. In Docker they are pre-installed in the image at `/opt/post-run-venvs/`.
 
 ---
 
@@ -165,7 +166,7 @@ If the previous scheduled run is still going when the next one is due, the new o
 
 `AUTO_RERUN_ON_STARTUP=true` makes the server do one run immediately after it starts, e.g. right after a deploy.
 
-To see what the emails look like without sending one, run `npm run build`, then `node scripts/previewMail.mjs`. It writes example emails to [`previews/`](previews/).
+To see what the emails look like without sending one, run `npm run build`, then `node scripts/previewMail.mjs` (set `DASHBOARD_URL` / `PUBLIC_API_URL` in your shell to preview with real links). It writes example emails to [`previews/`](previews/).
 
 ---
 
@@ -423,7 +424,7 @@ All settings come from `.env` (see [`.env.example`](.env.example) for the full, 
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | | Email sending. Without these, no emails go out. |
 | `QA_RECIPIENTS` | | Default email recipients (comma-separated) |
 | `PUBLIC_API_URL` | `http://localhost:4000` | Used for report links in emails |
-| `DASHBOARD_URL` | | Used for the "Back to Dashboard" button in reports |
+| `DASHBOARD_URL` | `http://localhost:5173` | Frontend URL for the "Open QA Dashboard" link in report emails and the "Back to Dashboard" button in reports |
 | `AUTO_RERUN_ON_STARTUP` | `false` | Run everything once right after starting |
 | `CONTROL_PLANE_PASSWORD_FILE` | `data/control-plane-password.json` | Where the rotated password is kept |
 | `POST_RUN_VENV_ROOT` | (unset) | Set in Docker to use pre-built Python environments |
@@ -465,6 +466,7 @@ All settings come from `.env` (see [`.env.example`](.env.example) for the full, 
 - `export` takes values from the finished run (`environment.x` or `collection.x`) and names them for use in steps as `{{name}}`.
 - `{{env.x}}` reads environment value `x` directly.
 - Steps run in order, from the suite's folder. A failing step is logged and doesn't change the test result.
+- `"enabledBy": "SOME_FLAG"` makes a step opt-in: it is skipped unless that environment variable is `true`, and if it fails the remaining steps still run.
 
 **Updating an existing suite from Postman:** export it, then **put the `${VAR}` placeholders back** before committing. A fresh export contains real values.
 

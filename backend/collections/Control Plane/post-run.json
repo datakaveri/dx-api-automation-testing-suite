@@ -66,6 +66,14 @@
         "--delete-user",
         "{{provider_user_id_1}}"
       ]
+    },
+    {
+      "name": "Clean up gateway queue and user",
+      "command": "python",
+      "enabledBy": "RUN_GATEWAY_CLEANUP",
+      "args": [
+        "../../automation-scripts/GATEWAY_Automation_Script/delete_rmq.py"
+      ]
     }
   ]
 }

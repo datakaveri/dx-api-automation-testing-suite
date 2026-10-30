@@ -25,7 +25,8 @@ const postRunSchema = z.looseObject({
     command: z.string().min(1),
     args: z.array(z.string()),
     shell: z.boolean().optional(),
-    env: z.record(z.string(), z.string()).optional()
+    env: z.record(z.string(), z.string()).optional(),
+    enabledBy: z.string().min(1).optional()
   }))
 });
 

@@ -63,6 +63,16 @@ before(async () => {
     "Python Stale/requirements.txt": REQUIREMENTS,
     ...folder("Python Ready", { export: exportToken, python: { requirements: "requirements.txt" }, steps: steps("ready") }),
     "Python Ready/requirements.txt": REQUIREMENTS,
+    ...folder("Optional", { export: exportToken, steps: [
+      { name: "off", command: "node", args: ["-e", "require('fs').writeFileSync('off-ran', '')"], shell: false, enabledBy: "QA_OPTIONAL_OFF" },
+      { name: "on-fails", command: "node", args: ["-e", "process.exit(4)"], shell: false, enabledBy: "QA_OPTIONAL_ON" },
+      ...steps("after-optional"),
+    ] }),
+    ...folder("Keep Going", { export: exportToken, steps: [
+      { name: "first-fails", command: "node", args: ["-e", "process.exit(5)"], shell: false },
+      ...steps("after-failure"),
+      { name: "last-fails", command: "node", args: ["-e", "process.exit(6)"], shell: false },
+    ] }),
     ...folder("Python Escape", { export: exportToken, python: { requirements: "../requirements.txt" }, steps: steps("never") }),
     // The request rotates the password the way the real Control Plane collection does.
     ...folder("Control Plane", undefined, [{ key: "consumer_pass", value: "old-password" }, { key: "new_password_value", value: "new-password" }],
@@ -79,6 +89,7 @@ before(async () => {
   }
   await writeFile(path.join(venvRoot, "python-ready", ".requirements.sha256"), `${createHash("sha256").update(REQUIREMENTS).digest("hex")}\n`);
   process.env.POST_RUN_VENV_ROOT = venvRoot;
+  process.env.QA_OPTIONAL_ON = "true";
   process.env.CONTROL_PLANE_PASSWORD_FILE = path.join(fixture.dir, "data", "control-plane-password.json");
 
   catalog = await scanCatalog(dir);
@@ -88,6 +99,7 @@ before(async () => {
 after(async () => {
   server.close();
   delete process.env.POST_RUN_VENV_ROOT;
+  delete process.env.QA_OPTIONAL_ON;
   delete process.env.CONTROL_PLANE_PASSWORD_FILE;
   await fixture.cleanup();
 });
@@ -130,10 +142,23 @@ describe("RunManager.runAllAndWait", () => {
       "shell-failure": 'Post-run step "fail" exited with code 3. bad [REDACTED]',
       "bad-export": 'Invalid post-run export source "nonsense" for "exported".',
       "missing-export": 'Post-run export "exported" requires environment value "not_there".',
+      "keep-going": 'Post-run step "first-fails" exited with code 5.\nPost-run step "last-fails" exited with code 6.',
       "python-missing": `Prebuilt Python environment is missing for collection "python-missing" at ${path.join(process.env.POST_RUN_VENV_ROOT!, "python-missing")}. Rebuild the deployment image.`,
       "python-stale": 'Python environment dependencies are out of date for collection "python-stale". Rebuild the deployment image.',
       "python-escape": "Python requirements file must stay inside the collection folder: ../requirements.txt",
     });
+  });
+
+  it("skips opt-in steps that are not enabled and keeps going past an enabled one that fails", async () => {
+    await assert.rejects(readFile(path.join(dir, "Optional", "off-ran")));
+    assert.ok(logger.entries.some((e) => e.message === "Optional post-run step failed" && e.metadata?.step === "on-fails"));
+    const output = JSON.parse(await readFile(path.join(dir, "Optional", "step-output.json"), "utf8"));
+    assert.equal(output.args[0], TOKEN);
+  });
+
+  it("keeps running post-run steps after a required one fails", async () => {
+    const output = JSON.parse(await readFile(path.join(dir, "Keep Going", "step-output.json"), "utf8"));
+    assert.equal(output.args[0], TOKEN);
   });
 
   it("uses a prebuilt Python environment whose requirements match", async () => {

@@ -579,6 +579,8 @@ async function runPostRunManifest(
         logger,
       )
     : null;
+  // A failed step must not block the rest; failures are reported together at the end.
+  const failures: string[] = [];
   for (const rawStep of parsed.steps) {
     if (
       !isRecord(rawStep) ||
@@ -589,6 +591,14 @@ async function runPostRunManifest(
       throw new Error("Post-run manifest contains an invalid step.");
     }
     const step = rawStep as unknown as PostRunStep;
+    if (step.enabledBy && process.env[step.enabledBy] !== "true") {
+      logger.info("Skipping optional post-run step", {
+        collectionId: descriptor.id,
+        step: step.name,
+        enabledBy: step.enabledBy,
+      });
+      continue;
+    }
     const runnableStep =
       pythonPath && step.command === "python"
         ? { ...step, command: pythonPath, shell: false }
@@ -597,8 +607,22 @@ async function runPostRunManifest(
       collectionId: descriptor.id,
       step: step.name,
     });
-    await runPostRunStep(runnableStep, workingDir, values, secrets, logger);
+    try {
+      await runPostRunStep(runnableStep, workingDir, values, secrets, logger);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!step.enabledBy) {
+        failures.push(message);
+        continue;
+      }
+      logger.info("Optional post-run step failed", {
+        collectionId: descriptor.id,
+        step: step.name,
+        error: message,
+      });
+    }
   }
+  if (failures.length) throw new Error(failures.join("\n"));
 }
 
 // Folder path from the request's own parent groups. Positions in the collection can't be

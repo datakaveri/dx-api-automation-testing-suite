@@ -534,6 +534,7 @@ def consumer_token(config: dict[str, Any], kc: Keycloak, target: dict[str, str])
     """
     if target["token"]:
         return target["token"]
+    LOG.info("Consumer password for %s: %r", target["username"], target["password"])
     if not target["username"] or not target["password"]:
         LOG.warning(
             "No password for the account: the balance and the Keycloak steps "

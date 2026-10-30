@@ -19,7 +19,7 @@ const envSchema = z
     MAIL_FROM: z.string().optional(),
     QA_RECIPIENTS: z.string().default(""),
     PUBLIC_API_URL: z.url().default("http://localhost:4000"),
-    DASHBOARD_URL: z.url().default("https://iudxqa-dev.slicearrow.com"),
+    DASHBOARD_URL: z.url().default("http://localhost:5173"),
     AUTO_RERUN_ON_STARTUP: z.stringbool().default(false)
   })
   .superRefine((config, context) => {

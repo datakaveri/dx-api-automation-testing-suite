@@ -160,6 +160,8 @@ export interface PostRunStep {
   args: string[];
   shell?: boolean;
   env?: Record<string, string>;
+  // Opt-in: the step runs only when this environment variable is "true", and its failure is not fatal.
+  enabledBy?: string;
 }
 
 export interface PostRunManifest {
