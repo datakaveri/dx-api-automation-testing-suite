@@ -1,0 +1,5 @@
+# Reviewed false positives: mock request data in the collection generator.
+# Format: <file>:<rule>:<line>. CI reads this file from the base branch, so a
+# new entry only takes effect after it is merged on its own.
+scripts/generateCollections.js:code-assignment-secret:285
+scripts/generateCollections.js:url-query-secret:538

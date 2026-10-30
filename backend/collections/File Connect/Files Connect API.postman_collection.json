@@ -58,9 +58,7 @@
             },
             "url": {
               "raw": "{{keycloakTokenUrl}}",
-              "host": [
-                "{{keycloakTokenUrl}}"
-              ]
+              "host": ["{{keycloakTokenUrl}}"]
             },
             "description": "#### Obtain Access Token (CosAdmin)\nAuthenticates the CosAdmin persona (`admin.cos.iudx.v2@datakaveri.org`) against Keycloak realm `iudx-v2`.\n\n- **Endpoint**: `POST https://v2.dev.iudx.io/auth/realms/iudx-v2/protocol/openid-connect/token`\n- **Content-Type**: `application/x-www-form-urlencoded`\n- **Body Parameters**:\n  - `grant_type`: `password`\n  - `client_id`: `angular-client`\n  - `username`: `admin.cos.iudx.v2@datakaveri.org`\n  - `password`: `{{cosAdminPassword}}`\n- **Post-Request Action**: Automatically saves `access_token` into `accessToken` and `cosAdminAccessToken`.\n"
           },
@@ -113,9 +111,7 @@
             },
             "url": {
               "raw": "{{keycloakTokenUrl}}",
-              "host": [
-                "{{keycloakTokenUrl}}"
-              ]
+              "host": ["{{keycloakTokenUrl}}"]
             },
             "description": "#### Obtain Access Token (Provider)\nAuthenticates the Provider persona (`paramesh@sirpi.io`) against Keycloak realm `iudx-v2`. Required for asset management and envelope encryption.\n\n- **Endpoint**: `POST https://v2.dev.iudx.io/auth/realms/iudx-v2/protocol/openid-connect/token`\n- **Content-Type**: `application/x-www-form-urlencoded`\n- **Body Parameters**:\n  - `grant_type`: `password`\n  - `client_id`: `angular-client`\n  - `username`: `paramesh@sirpi.io`\n  - `password`: `{{providerPassword}}`\n- **Post-Request Action**: Automatically saves `access_token` into `accessToken` and `providerAccessToken`.\n"
           },
@@ -168,9 +164,7 @@
             },
             "url": {
               "raw": "{{keycloakTokenUrl}}",
-              "host": [
-                "{{keycloakTokenUrl}}"
-              ]
+              "host": ["{{keycloakTokenUrl}}"]
             },
             "description": "#### Obtain Access Token (Consumer)\nAuthenticates the Consumer persona (`lawovo4579@synsky.com`) against Keycloak realm `iudx-v2`.\n\n- **Endpoint**: `POST https://v2.dev.iudx.io/auth/realms/iudx-v2/protocol/openid-connect/token`\n- **Content-Type**: `application/x-www-form-urlencoded`\n- **Body Parameters**:\n  - `grant_type`: `password`\n  - `client_id`: `angular-client`\n  - `username`: `lawovo4579@synsky.com`\n  - `password`: `{{consumerPassword}}`\n- **Post-Request Action**: Automatically saves `access_token` into `accessToken` and `consumerAccessToken`.\n"
           },
@@ -223,9 +217,7 @@
             },
             "url": {
               "raw": "{{keycloakTokenUrl}}",
-              "host": [
-                "{{keycloakTokenUrl}}"
-              ]
+              "host": ["{{keycloakTokenUrl}}"]
             },
             "description": "#### Obtain Access Token (Consumer)\nAuthenticates the Consumer persona (`lawovo4579@synsky.com`) against Keycloak realm `iudx-v2`.\n\n- **Endpoint**: `POST https://v2.dev.iudx.io/auth/realms/iudx-v2/protocol/openid-connect/token`\n- **Content-Type**: `application/x-www-form-urlencoded`\n- **Body Parameters**:\n  - `grant_type`: `password`\n  - `client_id`: `angular-client`\n  - `username`: `lawovo4579@synsky.com`\n  - `password`: `{{consumerPassword}}`\n- **Post-Request Action**: Automatically saves `access_token` into `accessToken` and `consumerAccessToken`.\n"
           },
@@ -282,15 +274,8 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{databankId}}/files",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "v1",
-                    "databanks",
-                    "{{databankId}}",
-                    "files"
-                  ]
+                  "host": ["{{baseUrl}}"],
+                  "path": ["v1", "databanks", "{{databankId}}", "files"]
                 },
                 "description": "Verifies file listing returns 200 OK when querying a registered databank."
               },
@@ -331,15 +316,8 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{databankId}}/files",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "v1",
-                    "databanks",
-                    "{{databankId}}",
-                    "files"
-                  ]
+                  "host": ["{{baseUrl}}"],
+                  "path": ["v1", "databanks", "{{databankId}}", "files"]
                 },
                 "description": "Verifies calling list files without an Authorization header is rejected with 401."
               },
@@ -361,9 +339,7 @@
                   "listen": "prerequest",
                   "script": {
                     "type": "text/javascript",
-                    "exec": [
-                      ""
-                    ]
+                    "exec": [""]
                   }
                 }
               ],
@@ -396,15 +372,8 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{databankId}}/files",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "v1",
-                    "databanks",
-                    "{{databankId}}",
-                    "files"
-                  ]
+                  "host": ["{{baseUrl}}"],
+                  "path": ["v1", "databanks", "{{databankId}}", "files"]
                 },
                 "description": "Verifies users without provider access are rejected with 403 Forbidden."
               },
@@ -458,9 +427,7 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{providerDatabankId}}/files/download",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "host": ["{{baseUrl}}"],
                   "path": [
                     "v1",
                     "databanks",
@@ -515,9 +482,7 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{databankId}}/files/download",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "host": ["{{baseUrl}}"],
                   "path": [
                     "v1",
                     "databanks",
@@ -571,9 +536,7 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{databankId}}/files/metadata",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "host": ["{{baseUrl}}"],
                   "path": [
                     "v1",
                     "databanks",
@@ -621,9 +584,7 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{databankId}}/files/metadata",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "host": ["{{baseUrl}}"],
                   "path": [
                     "v1",
                     "databanks",
@@ -684,9 +645,7 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{databankId}}/files/preview",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "host": ["{{baseUrl}}"],
                   "path": [
                     "v1",
                     "databanks",
@@ -741,9 +700,7 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{databankId}}/files/preview",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "host": ["{{baseUrl}}"],
                   "path": [
                     "v1",
                     "databanks",
@@ -798,9 +755,7 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{databankId}}/files/preview",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "host": ["{{baseUrl}}"],
                   "path": [
                     "v1",
                     "databanks",
@@ -835,9 +790,7 @@
                   "listen": "prerequest",
                   "script": {
                     "type": "text/javascript",
-                    "exec": [
-                      ""
-                    ]
+                    "exec": [""]
                   }
                 }
               ],
@@ -870,9 +823,7 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{providerDatabankId}}/uploads",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "host": ["{{baseUrl}}"],
                   "path": [
                     "v1",
                     "databanks",
@@ -926,9 +877,7 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{providerDatabankId}}/uploads",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "host": ["{{baseUrl}}"],
                   "path": [
                     "v1",
                     "databanks",
@@ -982,9 +931,7 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{providerDatabankId}}/uploads",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "host": ["{{baseUrl}}"],
                   "path": [
                     "v1",
                     "databanks",
@@ -1055,9 +1002,7 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{providerDatabankId}}/uploads/{{uploadId}}",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "host": ["{{baseUrl}}"],
                   "path": [
                     "v1",
                     "databanks",
@@ -1112,9 +1057,7 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{providerDatabankId}}/uploads/{{dummy_id}}",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "host": ["{{baseUrl}}"],
                   "path": [
                     "v1",
                     "databanks",
@@ -1166,9 +1109,7 @@
                 ],
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{providerDatabankId}}/query-access",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "host": ["{{baseUrl}}"],
                   "path": [
                     "v1",
                     "databanks",
@@ -1213,15 +1154,8 @@
                 ],
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{dummy_id}}/query-access",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "v1",
-                    "databanks",
-                    "{{dummy_id}}",
-                    "query-access"
-                  ]
+                  "host": ["{{baseUrl}}"],
+                  "path": ["v1", "databanks", "{{dummy_id}}", "query-access"]
                 },
                 "description": "Verifies uncatalogued databank query-access returns 400."
               },
@@ -1253,15 +1187,8 @@
                 ],
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{databankId}}/query-access",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "v1",
-                    "databanks",
-                    "{{databankId}}",
-                    "query-access"
-                  ]
+                  "host": ["{{baseUrl}}"],
+                  "path": ["v1", "databanks", "{{databankId}}", "query-access"]
                 },
                 "description": "Verifies unauthenticated query-access returns 401."
               },
@@ -1300,15 +1227,8 @@
                 ],
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{databankId}}/query-access",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "v1",
-                    "databanks",
-                    "{{databankId}}",
-                    "query-access"
-                  ]
+                  "host": ["{{baseUrl}}"],
+                  "path": ["v1", "databanks", "{{databankId}}", "query-access"]
                 },
                 "description": "Verifies caller without permission is rejected with 403 Forbidden."
               },
@@ -1353,9 +1273,7 @@
                 ],
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{providerDatabankId}}/download",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "host": ["{{baseUrl}}"],
                   "path": [
                     "v1",
                     "databanks",
@@ -1400,15 +1318,8 @@
                 ],
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{Invalid_ID}}/download",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "v1",
-                    "databanks",
-                    "{{Invalid_ID}}",
-                    "download"
-                  ]
+                  "host": ["{{baseUrl}}"],
+                  "path": ["v1", "databanks", "{{Invalid_ID}}", "download"]
                 },
                 "description": "Verifies non-existent databank returns 404."
               },
@@ -1446,9 +1357,7 @@
                 ],
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{providerDatabankId}}/report/download",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "host": ["{{baseUrl}}"],
                   "path": [
                     "v1",
                     "databanks",
@@ -1487,9 +1396,7 @@
                 ],
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{databankId}}/report/download",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "host": ["{{baseUrl}}"],
                   "path": [
                     "v1",
                     "databanks",
@@ -1550,15 +1457,8 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{databankId}}/process",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "v1",
-                    "databanks",
-                    "{{databankId}}",
-                    "process"
-                  ]
+                  "host": ["{{baseUrl}}"],
+                  "path": ["v1", "databanks", "{{databankId}}", "process"]
                 },
                 "description": "Verifies creating processing job returns 202 Accepted."
               },
@@ -1606,15 +1506,8 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{databankId}}/process",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "v1",
-                    "databanks",
-                    "{{databankId}}",
-                    "process"
-                  ]
+                  "host": ["{{baseUrl}}"],
+                  "path": ["v1", "databanks", "{{databankId}}", "process"]
                 },
                 "description": "Verifies invalid process job type returns 400."
               },
@@ -1659,9 +1552,7 @@
                 ],
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{providerDatabankId}}/process/{{jobId}}",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "host": ["{{baseUrl}}"],
                   "path": [
                     "v1",
                     "databanks",
@@ -1707,9 +1598,7 @@
                 ],
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{databankId}}/process/{{Invalid_Jobid}}",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "host": ["{{baseUrl}}"],
                   "path": [
                     "v1",
                     "databanks",
@@ -1770,9 +1659,7 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{providerDatabankId}}/process/{{jobId}}/status",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "host": ["{{baseUrl}}"],
                   "path": [
                     "v1",
                     "databanks",
@@ -1828,9 +1715,7 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{databankId}}/process/{{Invalid_Jobid}}/status",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "host": ["{{baseUrl}}"],
                   "path": [
                     "v1",
                     "databanks",
@@ -1891,9 +1776,7 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{providerDatabankId}}/uploads/{{uploadId}}/cancel",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "host": ["{{baseUrl}}"],
                   "path": [
                     "v1",
                     "databanks",
@@ -1949,9 +1832,7 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{providerDatabankId}}/uploads/{{uploadId}}/cancel",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "host": ["{{baseUrl}}"],
                   "path": [
                     "v1",
                     "databanks",
@@ -2007,9 +1888,7 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{providerDatabankId}}/uploads/{{dummy_id}}/cancel",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "host": ["{{baseUrl}}"],
                   "path": [
                     "v1",
                     "databanks",
@@ -2070,9 +1949,7 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{providerDatabankId}}/files/delete",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "host": ["{{baseUrl}}"],
                   "path": [
                     "v1",
                     "databanks",
@@ -2127,9 +2004,7 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/databanks/{{providerDatabankId}}/files/delete",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
+                  "host": ["{{baseUrl}}"],
                   "path": [
                     "v1",
                     "databanks",
@@ -2172,9 +2047,7 @@
                   "listen": "prerequest",
                   "script": {
                     "type": "text/javascript",
-                    "exec": [
-                      ""
-                    ]
+                    "exec": [""]
                   }
                 },
                 {
@@ -2206,21 +2079,14 @@
                     {
                       "key": "file",
                       "type": "file",
-                      "src": [
-                        "example.jpg"
-                      ]
+                      "src": ["example.jpg"]
                     }
                   ]
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/assets",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "v1",
-                    "assets"
-                  ]
+                  "host": ["{{baseUrl}}"],
+                  "path": ["v1", "assets"]
                 },
                 "description": "Verifies uploading a valid asset file (PNG/JPEG/PDF) returns 201 Created."
               },
@@ -2258,13 +2124,8 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/assets",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "v1",
-                    "assets"
-                  ]
+                  "host": ["{{baseUrl}}"],
+                  "path": ["v1", "assets"]
                 },
                 "description": "Verifies request with missing file returns 400 Bad Request."
               },
@@ -2283,9 +2144,7 @@
                   "listen": "prerequest",
                   "script": {
                     "type": "text/javascript",
-                    "exec": [
-                      ""
-                    ]
+                    "exec": [""]
                   }
                 },
                 {
@@ -2327,14 +2186,8 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/assets/download",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "v1",
-                    "assets",
-                    "download"
-                  ]
+                  "host": ["{{baseUrl}}"],
+                  "path": ["v1", "assets", "download"]
                 },
                 "description": "Verifies generating presigned URL for an asset returns 200 OK."
               },
@@ -2382,14 +2235,8 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/v1/assets/download",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "v1",
-                    "assets",
-                    "download"
-                  ]
+                  "host": ["{{baseUrl}}"],
+                  "path": ["v1", "assets", "download"]
                 },
                 "description": "Verifies non-existent asset key returns 404 Not Found."
               },
@@ -2419,7 +2266,7 @@
     },
     {
       "key": "keycloakTokenUrl",
-      "value": ""
+      "value": "https://v2.dev.iudx.io/auth/realms/iudx-v2/protocol/openid-connect/token"
     },
     {
       "key": "keycloakClientId",
@@ -2431,7 +2278,7 @@
     },
     {
       "key": "cosAdminPassword",
-      "value": "mBaIKA66qaGNNuHfWH6v"
+      "value": "${COS_ADMIN_PASSWORD}"
     },
     {
       "key": "providerUsername",
@@ -2439,7 +2286,7 @@
     },
     {
       "key": "providerPassword",
-      "value": "Bhagya@123"
+      "value": "${FC_PROVIDER_PASSWORD}"
     },
     {
       "key": "orgAdminUsername",
@@ -2451,7 +2298,7 @@
     },
     {
       "key": "consumerPassword",
-      "value": "Test@1234"
+      "value": "${FC_CONSUMER_PASSWORD}"
     },
     {
       "key": "accessToken",

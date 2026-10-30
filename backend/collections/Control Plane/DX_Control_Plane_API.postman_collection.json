@@ -309,6 +309,64 @@
           "response": []
         },
         {
+          "name": "Get Provider Req",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", function () {\n    pm.response.to.have.status(200);\n});\n\nconst json = pm.response.json();\npm.test(\"Has access_token\", function () {\n    pm.expect(json).to.have.property(\"access_token\");\n});\n\nif (pm.response.code === 200 && json && json.access_token) {\n    pm.collectionVariables.set(\"providerreq_token\", json.access_token);\n    console.log(\"Providerreq token saved.\");\n\n    function decodeJWT(token) {\n        const payload = token.split(\".\")[1];\n        const padded = payload + \"=\".repeat((4 - payload.length % 4) % 4);\n        const base64 = padded.replace(/-/g, \"+\").replace(/_/g, \"/\");\n        const decoded = decodeURIComponent(\n            atob(base64)\n                .split(\"\")\n                .map(c => \"%\" + (\"00\" + c.charCodeAt(0).toString(16)).slice(-2))\n                .join(\"\")\n        );\n        return JSON.parse(decoded);\n    }\n\n    try {\n        const claims = decodeJWT(json.access_token);\n        pm.collectionVariables.set(\"providerreq_user_id\", claims.sub);\n        console.log(\"Providerreq user_id saved:\", claims.sub);\n\n        if (claims.organisation_id) {\n            pm.environment.set(\"providerreq_org_id\", claims.organisation_id);\n            console.log(\"Saved providerreq_org_id from JWT (does NOT overwrite org_id):\", claims.organisation_id);\n        } else {\n            console.log(\"No organisation_id claim in token yet — user may not have joined an org.\");\n        }\n    } catch (e) {\n        console.log(\"Could not decode token:\", e.message);\n    }\n} else {\n    console.log(\"Get Provider Req did not return a valid token this run — leaving providerreq_token unchanged.\");\n}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}"
+                },
+                {
+                  "key": "username",
+                  "value": "{{providerreq_user}}"
+                },
+                {
+                  "key": "password",
+                  "value": "{{providerreq_pass}}"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{kc_host}}/realms/{{realm}}/protocol/openid-connect/token",
+              "host": [
+                "{{kc_host}}"
+              ],
+              "path": [
+                "realms",
+                "{{realm}}",
+                "protocol",
+                "openid-connect",
+                "token"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
           "name": "Get New User Token",
           "event": [
             {
@@ -1448,15 +1506,6 @@
           "name": "GET /organisations/requests – List (cos_admin) 200",
           "event": [
             {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  ""
-                ]
-              }
-            },
-            {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
@@ -1489,6 +1538,13 @@
                 "auth",
                 "organisations",
                 "requests"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "3",
+                  "disabled": true
+                }
               ]
             }
           },
@@ -4492,6 +4548,895 @@
       ]
     },
     {
+      "name": "04 – Platform Provider Requests",
+      "item": [
+        {
+          "name": "GET /auth/user/platform/provider-requests – Get Own Request 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {\r\n    pm.response.to.have.status(404);\r\n});\r\n\r\npm.test(\"Response has error envelope\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:notFound\");\r\n    pm.expect(jsonData.title).to.eql(\"Not Found\");\r\n    pm.expect(jsonData).to.have.property(\"detail\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{providerreq_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/user/platform/provider-requests",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "user",
+                "platform",
+                "provider-requests"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /auth/user/platform/provider-requests – Submit Request 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {\r\n    pm.response.to.have.status(200);\r\n});\r\n\r\npm.test(\"Response has success envelope\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:success\");\r\n    pm.expect(jsonData.title).to.eql(\"Success\");\r\n    pm.expect(jsonData.detail).to.eql(\"Provider role request submitted successfully\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{providerreq_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/user/platform/provider-requests",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "user",
+                "platform",
+                "provider-requests"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /auth/user/platform/provider-requests – Get Own Request 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {\r\n    pm.response.to.have.status(200);\r\n});\r\n\r\npm.test(\"Response has success envelope\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:success\");\r\n    pm.expect(jsonData.title).to.eql(\"Success\");\r\n});\r\n\r\npm.test(\"Result reflects the submitted request correctly\", function () {\r\n    const jsonData = pm.response.json();\r\n    const result = jsonData.result;\r\n    pm.expect(result).to.have.property(\"id\");\r\n    pm.expect(result.provider_type).to.eql(\"platform\");\r\n    pm.expect(result.status).to.eql(\"pending\");\r\n    pm.expect(result).to.have.property(\"created_at\");\r\n    pm.collectionVariables.set(\"providerreq_request_id\", result.id);\r\n    console.log(\"Providerreq request_id saved:\", result.id);\r\n});\r\n\r\npm.test(\"Enriched Keycloak roles include consumer\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.result.roles).to.include(\"consumer\");\r\n});\r\n\r\npm.test(\"Account is enabled\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.result.account_enabled).to.eql(true);\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{providerreq_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/user/platform/provider-requests",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "user",
+                "platform",
+                "provider-requests"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /auth/user/platform/provider-requests – Get Own Request 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {\r\n    pm.response.to.have.status(401);\r\n});\r\n\r\npm.test(\"Response has error envelope\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:notAuthorized\");\r\n    pm.expect(jsonData.title).to.eql(\"Not Authorized\");\r\n    pm.expect(jsonData.detail).to.eql(\"Missing credentials\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/user/platform/provider-requests",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "user",
+                "platform",
+                "provider-requests"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /auth/user/platform/provider-requests – Submit Request 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {\r\n    pm.response.to.have.status(409);\r\n});\r\n\r\npm.test(\"Response has conflict envelope\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:conflict\");\r\n    pm.expect(jsonData.title).to.eql(\"Conflict\");\r\n    pm.expect(jsonData.detail).to.eql(\"A pending or granted provider role request already exists for this user\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{providerreq_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/user/platform/provider-requests",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "user",
+                "platform",
+                "provider-requests"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /auth/user/platform/provider-requests – Submit Request 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {\r\n    pm.response.to.have.status(401);\r\n});\r\n\r\npm.test(\"Response has error envelope\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:notAuthorized\");\r\n    pm.expect(jsonData.title).to.eql(\"Not Authorized\");\r\n    pm.expect(jsonData.detail).to.eql(\"Missing credentials\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/user/platform/provider-requests",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "user",
+                "platform",
+                "provider-requests"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /auth/user/platform/provider-requests – Withdraw Request 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {\r\n    pm.response.to.have.status(200);\r\n});\r\n\r\npm.test(\"Response has success envelope\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:success\");\r\n    pm.expect(jsonData.title).to.eql(\"Success\");\r\n    pm.expect(jsonData.detail).to.eql(\"Platform provider role request deleted successfully\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{providerreq_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/user/platform/provider-requests",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "user",
+                "platform",
+                "provider-requests"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /auth/user/platform/provider-requests – Withdraw Request 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {\r\n    pm.response.to.have.status(404);\r\n});\r\n\r\npm.test(\"Response has error envelope\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:notFound\");\r\n    pm.expect(jsonData.title).to.eql(\"Not Found\");\r\n    pm.expect(jsonData.detail).to.include(\"No pending platform provider request found\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{providerreq_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/user/platform/provider-requests",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "user",
+                "platform",
+                "provider-requests"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /auth/user/platform/provider-requests – Withdraw Request 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {\r\n    pm.response.to.have.status(401);\r\n});\r\n\r\npm.test(\"Response has error envelope\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:notAuthorized\");\r\n    pm.expect(jsonData.title).to.eql(\"Not Authorized\");\r\n    pm.expect(jsonData.detail).to.eql(\"Missing credentials\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/user/platform/provider-requests",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "user",
+                "platform",
+                "provider-requests"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Provider Req Copy",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", function () {\n    pm.response.to.have.status(200);\n});\n\nconst json = pm.response.json();\npm.test(\"Has access_token\", function () {\n    pm.expect(json).to.have.property(\"access_token\");\n});\n\npm.collectionVariables.set(\"providerreq_token\", json.access_token);\nconsole.log(\"Providerreq token saved.\");\n\nfunction decodeJWT(token) {\n    const payload = token.split(\".\")[1];\n    const padded = payload + \"=\".repeat((4 - payload.length % 4) % 4);\n    const base64 = padded.replace(/-/g, \"+\").replace(/_/g, \"/\");\n    const decoded = decodeURIComponent(\n        atob(base64)\n            .split(\"\")\n            .map(c => \"%\" + (\"00\" + c.charCodeAt(0).toString(16)).slice(-2))\n            .join(\"\")\n    );\n    return JSON.parse(decoded);\n}\n\npm.test(\"POSITIVE: Auto-extract providerreq_org_id from JWT claims (informational only)\", function () {\n    const token = json.access_token;\n    try {\n        const claims = decodeJWT(token);\n\n        pm.collectionVariables.set(\"providerreq_user_id\", claims.sub);\n        console.log(\"Providerreq user_id saved:\", claims.sub);\n\n        if (claims.organisation_id) {\n            pm.environment.set(\"providerreq_org_id\", claims.organisation_id);\n            console.log(\"Saved providerreq_org_id from JWT (does NOT overwrite org_id):\", claims.organisation_id);\n        } else {\n            console.log(\"No organisation_id claim in token yet — user may not have joined an org.\");\n        }\n    } catch (e) {\n        console.log(\"Could not decode token:\", e.message);\n    }\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}"
+                },
+                {
+                  "key": "username",
+                  "value": "{{providerreq_user}}"
+                },
+                {
+                  "key": "password",
+                  "value": "{{providerreq_pass}}"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{kc_host}}/realms/{{realm}}/protocol/openid-connect/token",
+              "host": [
+                "{{kc_host}}"
+              ],
+              "path": [
+                "realms",
+                "{{realm}}",
+                "protocol",
+                "openid-connect",
+                "token"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /auth/user/platform/provider-requests – Submit Request 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {\r\n    pm.response.to.have.status(200);\r\n});\r\n\r\npm.test(\"Response has success envelope\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:success\");\r\n    pm.expect(jsonData.title).to.eql(\"Success\");\r\n    pm.expect(jsonData.detail).to.eql(\"Provider role request submitted successfully\");\r\n});\r\n\r\n// Auto-capture the new request's id — poll instead of a single fixed-delay read,\r\n// so we don't grab a stale \"own request\" view if the backend write hasn't\r\n// propagated to the read path yet.\r\nconst previousRequestId = pm.collectionVariables.get(\"providerreq_request_id\");\r\nconsole.log(\"Previous providerreq_request_id (before this submit):\", previousRequestId);\r\n\r\nconst maxAttempts = 5;\r\nconst delayMs = 1000;\r\nlet capturedId = undefined;\r\n\r\nfor (let attempt = 1; attempt <= maxAttempts; attempt++) {\r\n    await new Promise((resolve) => setTimeout(resolve, delayMs));\r\n\r\n    const getOwnRequest = {\r\n        url: pm.variables.replaceIn(\"{{base_url}}/iudx/v2/auth/user/platform/provider-requests\"),\r\n        method: \"GET\",\r\n        header: { Authorization: \"Bearer \" + pm.variables.get(\"providerreq_token\") }\r\n    };\r\n\r\n    const res = await pm.sendRequest(getOwnRequest);\r\n    const result = res.json().result;\r\n\r\n    console.log(`Attempt ${attempt}: own-request GET returned id=${result && result.id}, status=${result && result.status}`);\r\n\r\n    if (result && result.id && result.status === \"pending\" && result.id !== previousRequestId) {\r\n        capturedId = result.id;\r\n        break;\r\n    }\r\n}\r\n\r\npm.test(\"Captured a fresh pending providerreq_request_id\", function () {\r\n    pm.expect(capturedId, \"own-request GET never returned a new pending id after submit\").to.not.be.undefined;\r\n});\r\n\r\nif (capturedId) {\r\n    pm.collectionVariables.set(\"providerreq_request_id\", capturedId);\r\n    console.log(\"Providerreq request_id auto-saved:\", capturedId);\r\n} else {\r\n    console.log(\"WARNING: providerreq_request_id NOT updated — leaving previous value:\", previousRequestId);\r\n}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{providerreq_token}}"
+              }
+            ],
+            "url": {
+              "raw": "https://v2.dev.iudx.io/controlplane/iudx/v2/auth/user/platform/provider-requests",
+              "protocol": "https",
+              "host": [
+                "v2",
+                "dev",
+                "iudx",
+                "io"
+              ],
+              "path": [
+                "controlplane",
+                "iudx",
+                "v2",
+                "auth",
+                "user",
+                "platform",
+                "provider-requests"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /auth/user/platform/provider-requests – Get Own Request 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{providerreq_token}}"
+              }
+            ],
+            "url": {
+              "raw": "https://v2.dev.iudx.io/controlplane/iudx/v2/auth/user/platform/provider-requests",
+              "protocol": "https",
+              "host": [
+                "v2",
+                "dev",
+                "iudx",
+                "io"
+              ],
+              "path": [
+                "controlplane",
+                "iudx",
+                "v2",
+                "auth",
+                "user",
+                "platform",
+                "provider-requests"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get COS Admin Token Copy",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", function () {\n    pm.response.to.have.status(200);\n});\n\nconst json = pm.response.json();\npm.test(\"Has access_token\", function () {\n    pm.expect(json).to.have.property(\"access_token\");\n});\n\npm.collectionVariables.set(\"cosadmin_token\", json.access_token);\nconsole.log(\"COS Admin token saved.\");"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}"
+                },
+                {
+                  "key": "username",
+                  "value": "{{cos_admin}}"
+                },
+                {
+                  "key": "password",
+                  "value": "{{cos_admin_pass}}"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{kc_host}}/realms/{{realm}}/protocol/openid-connect/token",
+              "host": [
+                "{{kc_host}}"
+              ],
+              "path": [
+                "realms",
+                "{{realm}}",
+                "protocol",
+                "openid-connect",
+                "token"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /auth/admin/platform/provider-requests – List Requests 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {\r\n    pm.response.to.have.status(200);\r\n});\r\n\r\npm.test(\"Response has success envelope\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:success\");\r\n    pm.expect(jsonData.title).to.eql(\"Success\");\r\n});\r\n\r\npm.test(\"Our test user's pending request appears in the filtered list\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.result).to.be.an(\"array\");\r\n    const ourRequest = jsonData.result.find(r => r.id === pm.collectionVariables.get(\"providerreq_request_id\"));\r\n    pm.expect(ourRequest).to.not.be.undefined;\r\n    pm.expect(ourRequest.status).to.eql(\"pending\");\r\n    pm.expect(ourRequest.user_id).to.eql(pm.collectionVariables.get(\"providerreq_user_id\"));\r\n});\r\n\r\npm.test(\"Pagination info is present\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData).to.have.property(\"paginationInfo\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{cosadmin_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/admin/platform/provider-requests?userId={{providerreq_user_id}}&size=100",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "admin",
+                "platform",
+                "provider-requests"
+              ],
+              "query": [
+                {
+                  "key": "userId",
+                  "value": "{{providerreq_user_id}}"
+                },
+                {
+                  "key": "size",
+                  "value": "100"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /auth/admin/platform/provider-requests – List Requests 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {\r\n    pm.response.to.have.status(401);\r\n});\r\n\r\npm.test(\"Response has error envelope\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:notAuthorized\");\r\n    pm.expect(jsonData.title).to.eql(\"Not Authorized\");\r\n    pm.expect(jsonData.detail).to.eql(\"Missing credentials\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/admin/platform/provider-requests?userId={{providerreq_user_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "admin",
+                "platform",
+                "provider-requests"
+              ],
+              "query": [
+                {
+                  "key": "userId",
+                  "value": "{{providerreq_user_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /auth/admin/platform/provider-requests – List Requests 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 403\", function () {\r\n    pm.response.to.have.status(403);\r\n});\r\n\r\npm.test(\"Response has error envelope\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:forbidden\");\r\n    pm.expect(jsonData.title).to.eql(\"Forbidden\");\r\n    pm.expect(jsonData.detail).to.eql(\"User does not hold the required role\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{providerreq_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/admin/platform/provider-requests?userId={{providerreq_user_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "admin",
+                "platform",
+                "provider-requests"
+              ],
+              "query": [
+                {
+                  "key": "userId",
+                  "value": "{{providerreq_user_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /auth/admin/platform/provider-requests/{id} – Update Status 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {\r\n    pm.response.to.have.status(401);\r\n});\r\n\r\npm.test(\"Response has error envelope\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:notAuthorized\");\r\n    pm.expect(jsonData.title).to.eql(\"Not Authorized\");\r\n    pm.expect(jsonData.detail).to.eql(\"Missing credentials\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"status\": \"granted\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/admin/platform/provider-requests/{{providerreq_request_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "admin",
+                "platform",
+                "provider-requests",
+                "{{providerreq_request_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /auth/admin/platform/provider-requests/{id} – Update Status 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 403\", function () {\r\n    pm.response.to.have.status(403);\r\n});\r\n\r\npm.test(\"Response has error envelope\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:forbidden\");\r\n    pm.expect(jsonData.title).to.eql(\"Forbidden\");\r\n    pm.expect(jsonData.detail).to.eql(\"User does not hold the required role\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{providerreq_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"status\": \"granted\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/admin/platform/provider-requests/{{providerreq_request_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "admin",
+                "platform",
+                "provider-requests",
+                "{{providerreq_request_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /auth/admin/platform/provider-requests/{id} – Update Status 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 400\", function () {\r\n    pm.response.to.have.status(400);\r\n});\r\n\r\npm.test(\"Response has error envelope\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:badRequest\");\r\n    pm.expect(jsonData.title).to.eql(\"Bad Request\");\r\n    pm.expect(jsonData.detail).to.include(\"status\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{cosadmin_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"status\": \"grantedd\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/admin/platform/provider-requests/{{providerreq_request_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "admin",
+                "platform",
+                "provider-requests",
+                "{{providerreq_request_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /auth/admin/platform/provider-requests/{id} – Update Status 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {\r\n    pm.response.to.have.status(404);\r\n});\r\n\r\npm.test(\"Response has error envelope\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:notFound\");\r\n    pm.expect(jsonData.title).to.eql(\"Not Found\");\r\n    pm.expect(jsonData.detail).to.eql(\"No request found with given ID\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{cosadmin_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"status\": \"granted\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/admin/platform/provider-requests/{{nonExistentRsId}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "admin",
+                "platform",
+                "provider-requests",
+                "{{nonExistentRsId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /auth/admin/platform/provider-requests/{id} – Update Status 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {\r\n    pm.response.to.have.status(200);\r\n});\r\n\r\npm.test(\"Response has success envelope\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:success\");\r\n    pm.expect(jsonData.title).to.eql(\"Success\");\r\n    pm.expect(jsonData.detail).to.eql(\"Provider role request approved successfully\");\r\n});\r\n\r\n// Verify the role grant actually took effect, not just that the response claimed success.\r\n// Use the admin list endpoint (not the user's self-service \"pending only\" endpoint),\r\n// since it still returns the request after it's moved out of pending status.\r\nawait new Promise((resolve) => setTimeout(resolve, 2000));\r\n\r\nconst getAdminListRequest = {\r\n    url: pm.variables.replaceIn(\"{{base_url}}/iudx/v2/auth/admin/platform/provider-requests?userId={{providerreq_user_id}}\"),\r\n    method: \"GET\",\r\n    header: { Authorization: \"Bearer \" + pm.variables.get(\"cosadmin_token\") }\r\n};\r\n\r\nconst res = await pm.sendRequest(getAdminListRequest);\r\nconsole.log(\"Admin list GET status:\", res.code);\r\nconsole.log(\"Admin list GET body:\", JSON.stringify(res.json(), null, 2));\r\n\r\nconst requests = res.json().result;\r\nconst thisRequest = requests.find(r => r.id === pm.variables.get(\"providerreq_request_id\"));\r\n\r\npm.test(\"Status persisted as granted\", () => {\r\n    pm.expect(thisRequest).to.not.be.undefined;\r\n    pm.expect(thisRequest.status).to.eql(\"granted\");\r\n});\r\n\r\npm.test(\"PROVIDER role actually assigned in Keycloak\", () => {\r\n    pm.expect(thisRequest.roles).to.include(\"provider\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{cosadmin_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"status\": \"granted\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/admin/platform/provider-requests/{{providerreq_request_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "admin",
+                "platform",
+                "provider-requests",
+                "{{providerreq_request_id}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "03 – User & Role Management",
       "item": [
         {
@@ -4588,6 +5533,491 @@
                 "v2",
                 "auth",
                 "user"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /user – (Org Admin) Get User Information 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {\n    pm.response.to.have.status(200);\n});\n\nconst jsonData = pm.response.json();\n\npm.test(\"Response type and title match spec\", function () {\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:success\");\n    pm.expect(jsonData.title).to.eql(\"Success\");\n});\n\npm.test(\"Result contains expected DxUser fields\", function () {\n    pm.expect(jsonData.result).to.be.an(\"object\");\n    pm.expect(jsonData.result).to.have.property(\"sub\");\n    pm.expect(jsonData.result).to.have.property(\"email\");\n   // pm.expect(jsonData.result).to.have.property(\"organisationId\");\n    pm.expect(jsonData.result).to.have.property(\"roles\").that.is.an(\"array\");\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{orgadmin_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/organisations/{{org_id}}/users/{{providerreq_user_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "organisations",
+                "{{org_id}}",
+                "users",
+                "{{providerreq_user_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /user – (Org Admin) Get User Information 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {\n    pm.response.to.have.status(401);\n});\n\nconst jsonData = pm.response.json();\n\npm.test(\"Response type and title match spec\", function () {\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:notAuthorized\");\n    pm.expect(jsonData.title).to.eql(\"Not Authorized\");\n});\n\npm.test(\"Detail field present\", function () {\n    pm.expect(jsonData).to.have.property(\"detail\");\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{new_user_token}}",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/organisations/{{org_id}}/users/{{providerreq_user_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "organisations",
+                "{{org_id}}",
+                "users",
+                "{{providerreq_user_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /user – (Org Admin) Get User Information 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 403\", function () {\n    pm.response.to.have.status(403);\n});\n\nconst jsonData = pm.response.json();\n\npm.test(\"Response type and title match spec\", function () {\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:forbidden\");\n    pm.expect(jsonData.title).to.eql(\"Forbidden\");\n});\n\npm.test(\"Detail field present\", function () {\n    pm.expect(jsonData).to.have.property(\"detail\");\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{new_user_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/organisations/{{org_id}}/users/{{providerreq_user_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "organisations",
+                "{{org_id}}",
+                "users",
+                "{{providerreq_user_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /user/update – Deactivate Own Account 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {\n    pm.response.to.have.status(200);\n});\n\nconst jsonData = pm.response.json();\n\npm.test(\"Response type and title match spec\", function () {\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:success\");\n    pm.expect(jsonData.title).to.eql(\"Success\");\n});\n\npm.test(\"Detail field present\", function () {\n    pm.expect(jsonData).to.have.property(\"detail\");\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{providerreq_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"status\": \"deactivate\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/user/update",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "user",
+                "update"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /user/update – activate Own Account 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {\r\n    pm.response.to.have.status(200);\r\n});\r\n\r\nconst jsonData = pm.response.json();\r\n\r\npm.test(\"Response type and title match spec\", function () {\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:success\");\r\n    pm.expect(jsonData.title).to.eql(\"Success\");\r\n});\r\n\r\npm.test(\"Detail field present\", function () {\r\n    pm.expect(jsonData).to.have.property(\"detail\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{providerreq_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"status\": \"activate\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/user/update",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "user",
+                "update"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /user/update – activate Own Account 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 400\", function () {\r\n    pm.response.to.have.status(400);\r\n});\r\n\r\nconst jsonData = pm.response.json();\r\n\r\npm.test(\"Response type and title match spec\", function () {\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:badRequest\");\r\n    pm.expect(jsonData.title).to.eql(\"Bad Request\");\r\n});\r\n\r\npm.test(\"Detail field present\", function () {\r\n    pm.expect(jsonData).to.have.property(\"detail\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{providerreq_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"status\": \"activate\" ",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/user/update",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "user",
+                "update"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /user/update – activate Own Account 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {\r\n    pm.response.to.have.status(401);\r\n});\r\n\r\nconst jsonData = pm.response.json();\r\n\r\npm.test(\"Response type and title match spec\", function () {\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:notAuthorized\");\r\n    pm.expect(jsonData.title).to.eql(\"Not Authorized\");\r\n});\r\n\r\npm.test(\"Detail field present\", function () {\r\n    pm.expect(jsonData).to.have.property(\"detail\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{providerreq_token}}",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"status\": \"activate\" ",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/user/update",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "user",
+                "update"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /admin/:id/update – Activate User 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {\r\n    pm.response.to.have.status(200);\r\n});\r\n\r\nconst jsonData = pm.response.json();\r\n\r\npm.test(\"Response type and title match spec\", function () {\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:success\");\r\n    pm.expect(jsonData.title).to.eql(\"Success\");\r\n});\r\n\r\npm.test(\"Detail field present\", function () {\r\n    pm.expect(jsonData).to.have.property(\"detail\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{cosadmin_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"status\": \"activate\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/admin/{{providerreq_user_id}}/update",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "admin",
+                "{{providerreq_user_id}}",
+                "update"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /admin/:id/update – Activate User 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 400\", function () {\r\n    pm.response.to.have.status(400);\r\n});\r\n\r\nconst jsonData = pm.response.json();\r\n\r\npm.test(\"Response type and title match spec\", function () {\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:badRequest\");\r\n    pm.expect(jsonData.title).to.eql(\"Bad Request\");\r\n});\r\n\r\npm.test(\"Detail field present\", function () {\r\n    pm.expect(jsonData).to.have.property(\"detail\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{cosadmin_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"status\": \"activate\" ",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/admin/{{providerreq_user_id}}/update",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "admin",
+                "{{providerreq_user_id}}",
+                "update"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /admin/:id/update – Activate User 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {\r\n    pm.response.to.have.status(401);\r\n});\r\n\r\nconst jsonData = pm.response.json();\r\n\r\npm.test(\"Response type and title match spec\", function () {\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:notAuthorized\");\r\n    pm.expect(jsonData.title).to.eql(\"Not Authorized\");\r\n});\r\n\r\npm.test(\"Detail field present\", function () {\r\n    pm.expect(jsonData).to.have.property(\"detail\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{cosadmin_token}}",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"status\": \"activate\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/admin/{{providerreq_user_id}}/update",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "admin",
+                "{{providerreq_user_id}}",
+                "update"
               ]
             }
           },
@@ -6577,20 +8007,11 @@
           "name": "GET /user/description/info – Get Description 200",
           "event": [
             {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  ""
-                ]
-              }
-            },
-            {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  ""
+                  "pm.test(\"Status code is 200\", function () {\r\n    pm.response.to.have.status(200);\r\n});\r\n\r\nconst body = pm.response.json();\r\n\r\npm.test(\"type matches spec\", function () {\r\n    pm.expect(body.type).to.eql(\"urn:dx:controlPlane:success\");\r\n});\r\n\r\npm.test(\"title matches spec\", function () {\r\n    pm.expect(body.title).to.eql(\"Success\");\r\n});"
                 ]
               }
             }
@@ -13984,6 +15405,61 @@
           "response": []
         },
         {
+          "name": "GET /cat/item?id= – Get Item 200 (databank)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {\r\n    pm.response.to.have.status(200);\r\n});\r\n\r\nvar jsonData = pm.response.json();\r\n\r\npm.test(\"Response type, title, and detail are correct\", function () {\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:success\");\r\n    pm.expect(jsonData.title).to.eql(\"Success\");\r\n    pm.expect(jsonData).to.have.property(\"detail\");\r\n});\r\n\r\npm.test(\"Result contains the requested DataBank item\", function () {\r\n    pm.expect(jsonData.result).to.be.an(\"array\").with.lengthOf(1);\r\n    var item = jsonData.result[0];\r\n    pm.expect(item.id).to.eql(pm.collectionVariables.get(\"databank_item_id\"));\r\n    pm.expect(item.type).to.include(\"adex:DataBank\");\r\n    // itemStatus intentionally not asserted here — this item's itemStatus was wiped by the\r\n    // already-logged PUT /cat/item defect (Update Item nulls itemStatus); tracked separately, not re-flagged here\r\n    pm.expect(item.publishStatus).to.be.oneOf([\"PENDING\", \"ACTIVE\", \"REJECTED\"]);\r\n});\r\n\r\npm.test(\"Pagination info is correct for a single item\", function () {\r\n    pm.expect(jsonData.paginationInfo.totalCount).to.eql(1);\r\n    pm.expect(jsonData.paginationInfo.page).to.eql(1);\r\n    pm.expect(jsonData.paginationInfo.hasNext).to.eql(false);\r\n    pm.expect(jsonData.paginationInfo.hasPrevious).to.eql(false);\r\n});"
+                ]
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Synchronous 1s delay (top-level `await` is not reliably supported\r\n// across all Postman/Newman sandbox versions, so we busy-wait instead).\r\nconst delay = 1000; // milliseconds\r\nconst start = Date.now();\r\nwhile (Date.now() - start < delay) {\r\n    // intentional busy-wait\r\n}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{provider_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/cat/item?id={{databank_item_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "cat",
+                "item"
+              ],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "{{databank_item_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
           "name": "GET /cat/item?id= – Get Item 400",
           "event": [
             {
@@ -14291,6 +15767,53 @@
                 {
                   "key": "id",
                   "value": "{{apps_item_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /cat/item/access?id= – Get Item Access 200 (databank)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {\r\n    pm.response.to.have.status(200);\r\n});\r\n\r\nvar jsonData = pm.response.json();\r\n\r\npm.test(\"Response type, title, and detail are correct\", function () {\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:success\");\r\n    pm.expect(jsonData.title).to.eql(\"Success\");\r\n    pm.expect(jsonData).to.have.property(\"detail\");\r\n});\r\n\r\npm.test(\"Result contains the requested item with correct access policy\", function () {\r\n    pm.expect(jsonData.result).to.be.an(\"array\").with.lengthOf(1);\r\n    var item = jsonData.result[0];\r\n    pm.expect(item.id).to.eql(pm.collectionVariables.get(\"databank_item_id\"));\r\n    pm.expect(item.type).to.include(\"adex:DataBank\");\r\n    pm.expect(item.accessPolicy).to.eql(\"RESTRICTED\");\r\n    pm.expect(item.itemStatus).to.eql(\"UNVERIFIED\");\r\n    pm.expect(item.publishStatus).to.eql(\"PENDING\");\r\n});\r\n\r\npm.test(\"Access-context flags present for RESTRICTED item\", function () {\r\n    var item = jsonData.result[0];\r\n    pm.expect(item).to.have.property(\"hasOwnerAccess\").that.is.a(\"boolean\");\r\n    pm.expect(item).to.have.property(\"hasAdminAccess\").that.is.a(\"boolean\");\r\n});\r\n\r\npm.test(\"Pagination info is correct for a single item\", function () {\r\n    pm.expect(jsonData.paginationInfo.totalCount).to.eql(1);\r\n    pm.expect(jsonData.paginationInfo.hasNext).to.eql(false);\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{provider_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/cat/item/access?id={{databank_item_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "cat",
+                "item",
+                "access"
+              ],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "{{databank_item_id}}"
                 }
               ]
             }
@@ -14612,6 +16135,55 @@
           "response": []
         },
         {
+          "name": "PUT /cat/item – Update Item 200 (databank)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {\r\n    pm.response.to.have.status(200);\r\n});\r\n\r\nvar jsonData = pm.response.json();\r\n\r\npm.test(\"Response type and title are correct\", function () {\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:success\");\r\n    pm.expect(jsonData.title).to.eql(\"Success\");\r\n});\r\n\r\npm.test(\"Updated fields reflect the new values\", function () {\r\n    pm.expect(jsonData.result.label).to.eql(\"Subdistrict Weather Information - Updated via PUT\");\r\n    pm.expect(jsonData.result.description).to.eql(\"Daily weather statistics at subdistrict level including temperature and rainfall metrics.\");\r\n   // pm.expect(jsonData.result.mediaURL).to.eql(\"https://example.com/models/ai-sandbox-model-updated.ipynb\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{provider_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"@context\": \"https://voc.forest-stack.iudx.io/\",\n  \"id\": \"{{databank_item_id}}\",\n  \"type\": [\"adex:DataBank\"],\n  \"name\": \"Weather Informations fortest - Data Bank Test 01\",\n  \"label\": \"Subdistrict Weather Information - Updated via PUT\",\n  \"shortDescription\": \"Daily aggregated temperature and rainfall data at subdistrict level - Updated via PUT\",\n  \"description\": \"Daily weather statistics at subdistrict level including temperature and rainfall metrics.\",\n  \"tags\": [\"weather\", \"temperature\", \"rainfall\", \"environment\"],\n  \"accessPolicy\": \"RESTRICTED\",\n  \"organizationId\": \"{{org_id}}\",\n  \"organizationType\": \"Public\",\n  \"department\": \"Department of IT, Electronics and Communication\",\n  \"industry\": \"Environmental Monitoring\",\n  \"geoCoverage\": \"Karnataka, India\",\n  \"uploadFrequency\": \"Daily\",\n  \"yearRange\": \"2021-2024\",\n  \"uploadedBy\": \"Forecast department\",\n  \"license\": \"CC-BY 4.0\",\n  \"fileSize\": \"15MB\",\n  \"fileFormat\": \"xlsx\",\n  \"dataDescriptor\": {\n    \"columns\": [\n      { \"name\": \"temperature\", \"type\": \"float\" },\n      { \"name\": \"rainfall\", \"type\": \"float\" }\n    ],\n    \"formatVersion\": \"v1.0\"\n  },\n  \"dataSample\": {\n    \"id\": 0,\n    \"name\": \"Sample Subdistrict Observation\",\n    \"lat\": 0,\n    \"lon\": 0,\n    \"observed_on\": \"2021-01-01\",\n    \"quality_grade\": \"research\"\n  },\n  \"resourceServer\": [\n    {\n      \"name\": \"NGSI-LD\",\n      \"type\": \"ngsi-ld\",\n      \"queryTypes\": [\"ATTR\"],\n      \"accessTypes\": [\"api\"],\n      \"datasetType\": \"DATASET\",\n      \"url\": \"v2.dev.rs.iudx.io\"\n    },\n    {\n      \"name\": \"FILE\",\n      \"type\": \"file\",\n      \"queryTypes\": [\"ATTR\"],\n      \"accessTypes\": [\"api\"],\n      \"datasetType\": \"FILE\",\n      \"url\": \"v2.dev.file.iudx.io\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/cat/item",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "cat",
+                "item"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
           "name": "PUT /cat/item – Update Item 400",
           "event": [
             {
@@ -14830,6 +16402,664 @@
                 "v2",
                 "cat",
                 "item"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /cat/item – Patch Item Metadata 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", () => pm.response.to.have.status(200));\r\n\r\nconst jsonData = pm.response.json();\r\n\r\npm.test(\"Response has success envelope\", () => {\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:success\");\r\n    pm.expect(jsonData.title).to.eql(\"Success\");\r\n    pm.expect(jsonData).to.have.property(\"detail\");\r\n});\r\n\r\npm.test(\"Result confirms the patched item id\", () => {\r\n    pm.expect(jsonData.result).to.be.an(\"array\");\r\n    pm.expect(jsonData.result[0].id).to.eql(pm.variables.get(\"aimodel_item_id\"));\r\n});\r\n\r\nawait new Promise((resolve) => setTimeout(resolve, 2000));\r\n\r\nconst getItemRequest = {\r\n    url: pm.variables.replaceIn(\"{{base_url}}/iudx/v2/cat/item?id={{aimodel_item_id}}\"),\r\n    method: \"GET\",\r\n    header: { Authorization: \"Bearer \" + pm.variables.get(\"provider_token\") }\r\n};\r\n\r\nconst res = await pm.sendRequest(getItemRequest);\r\nconst item = res.json().result[0];\r\n\r\npm.test(\"Patched fields verified via GET Item\", () => {\r\n    pm.expect(item.label).to.eql(\"Updated Asset Label\");\r\n    pm.expect(item.shortDescription).to.eql(\"Updated short description\");\r\n});\r\n\r\npm.test(\"itemStatus preserved after PATCH (not nulled)\", () => {\r\n    pm.expect(item.itemStatus).to.not.be.null;\r\n});\r\n\r\npm.test(\"Restricted fields unchanged after PATCH\", () => {\r\n    pm.expect(item).to.have.property(\"ownerUserId\");\r\n    pm.expect(item).to.have.property(\"organizationId\");\r\n    pm.expect(item).to.have.property(\"itemCreatedAt\");\r\n    pm.expect(item).to.have.property(\"metrics\");\r\n});\r\n\r\npm.test(\"lastUpdated was bumped\", () => {\r\n    pm.expect(item).to.have.property(\"lastUpdated\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{provider_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"label\": \"Updated Asset Label\",\r\n  \"shortDescription\": \"Updated short description\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/cat/item?id={{aimodel_item_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "cat",
+                "item"
+              ],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "{{aimodel_item_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /cat/item – Patch Item Metadata 200 (databank)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", () => pm.response.to.have.status(200));\r\n\r\nconst jsonData = pm.response.json();\r\n\r\npm.test(\"Response has success envelope\", () => {\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:success\");\r\n    pm.expect(jsonData.title).to.eql(\"Success\");\r\n    pm.expect(jsonData).to.have.property(\"detail\");\r\n});\r\n\r\npm.test(\"Result confirms the patched item id\", () => {\r\n    pm.expect(jsonData.result).to.be.an(\"array\");\r\n    pm.expect(jsonData.result[0].id).to.eql(pm.variables.get(\"databank_item_id\"));\r\n});\r\n\r\nawait new Promise((resolve) => setTimeout(resolve, 2000));\r\n\r\nconst getItemRequest = {\r\n    url: pm.variables.replaceIn(\"{{base_url}}/iudx/v2/cat/item?id={{databank_item_id}}\"),\r\n    method: \"GET\",\r\n    header: { Authorization: \"Bearer \" + pm.variables.get(\"provider_token\") }\r\n};\r\n\r\nconst res = await pm.sendRequest(getItemRequest);\r\nconst item = res.json().result[0];\r\n\r\npm.test(\"Patched fields verified via GET Item\", () => {\r\n    pm.expect(item.label).to.eql(\"Subdistrict Weather Information - Updated via PATCH\");\r\n    pm.expect(item.shortDescription).to.eql(\"Daily aggregated temperature and rainfall data at subdistrict level - Updated via PATCH\");\r\n});\r\n\r\npm.test(\"itemStatus preserved after PATCH (not nulled)\", () => {\r\n    pm.expect(item.itemStatus).to.not.be.null;\r\n});\r\n\r\npm.test(\"accessPolicy unchanged (still RESTRICTED)\", () => {\r\n    pm.expect(item.accessPolicy).to.eql(\"RESTRICTED\");\r\n});\r\n\r\npm.test(\"Restricted fields unchanged after PATCH\", () => {\r\n    pm.expect(item).to.have.property(\"ownerUserId\");\r\n    pm.expect(item).to.have.property(\"organizationId\");\r\n    pm.expect(item).to.have.property(\"itemCreatedAt\");\r\n    pm.expect(item).to.have.property(\"metrics\");\r\n});\r\n\r\npm.test(\"lastUpdated was bumped\", () => {\r\n    pm.expect(item).to.have.property(\"lastUpdated\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{provider_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"label\": \"Subdistrict Weather Information - Updated via PATCH\",\r\n  \"shortDescription\": \"Daily aggregated temperature and rainfall data at subdistrict level - Updated via PATCH\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/cat/item?id={{databank_item_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "cat",
+                "item"
+              ],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "{{databank_item_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /cat/item – Patch Item Metadata 200 (publishStatus)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", () => pm.response.to.have.status(200));\r\n\r\nconst jsonData = pm.response.json();\r\n\r\npm.test(\"Response has success envelope\", () => {\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:success\");\r\n    pm.expect(jsonData.title).to.eql(\"Success\");\r\n    pm.expect(jsonData).to.have.property(\"detail\");\r\n});\r\n\r\npm.test(\"Result confirms the patched item id\", () => {\r\n    pm.expect(jsonData.result).to.be.an(\"array\");\r\n    pm.expect(jsonData.result[0].id).to.eql(pm.variables.get(\"aimodel_item_id\"));\r\n});\r\n\r\nawait new Promise((resolve) => setTimeout(resolve, 2000));\r\n\r\nconst getItemRequest = {\r\n    url: pm.variables.replaceIn(\"{{base_url}}/iudx/v2/cat/item?id={{aimodel_item_id}}\"),\r\n    method: \"GET\",\r\n    header: { Authorization: \"Bearer \" + pm.variables.get(\"provider_token\") }\r\n};\r\n\r\nconst res = await pm.sendRequest(getItemRequest);\r\nconst item = res.json().result[0];\r\n\r\npm.test(\"publishStatus updated to ACTIVE\", () => {\r\n    pm.expect(item.publishStatus).to.eql(\"ACTIVE\");\r\n});\r\n\r\npm.test(\"itemStatus unaffected by publishStatus change\", () => {\r\n    pm.expect(item.itemStatus).to.not.be.null;\r\n    pm.expect(item.itemStatus).to.be.oneOf([\"UNVERIFIED\", \"VERIFIED\"]);\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{cosadmin_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"publishStatus\": \"ACTIVE\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/cat/item?id={{aimodel_item_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "cat",
+                "item"
+              ],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "{{aimodel_item_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /cat/item – Patch Item Metadata 200 (publishStatus, databank)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", () => pm.response.to.have.status(200));\r\n\r\nconst jsonData = pm.response.json();\r\n\r\npm.test(\"Response has success envelope\", () => {\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:success\");\r\n    pm.expect(jsonData.title).to.eql(\"Success\");\r\n    pm.expect(jsonData).to.have.property(\"detail\");\r\n});\r\n\r\npm.test(\"Result confirms the patched item id\", () => {\r\n    pm.expect(jsonData.result).to.be.an(\"array\");\r\n    pm.expect(jsonData.result[0].id).to.eql(pm.variables.get(\"databank_item_id\"));\r\n});\r\n\r\nawait new Promise((resolve) => setTimeout(resolve, 2000));\r\n\r\nconst getItemRequest = {\r\n    url: pm.variables.replaceIn(\"{{base_url}}/iudx/v2/cat/item?id={{databank_item_id}}\"),\r\n    method: \"GET\",\r\n    header: { Authorization: \"Bearer \" + pm.variables.get(\"provider_token\") }\r\n};\r\n\r\nconst res = await pm.sendRequest(getItemRequest);\r\nconst item = res.json().result[0];\r\n\r\npm.test(\"publishStatus updated to ACTIVE\", () => {\r\n    pm.expect(item.publishStatus).to.eql(\"ACTIVE\");\r\n});\r\n\r\npm.test(\"itemStatus unaffected by publishStatus change\", () => {\r\n    pm.expect(item.itemStatus).to.not.be.null;\r\n    pm.expect(item.itemStatus).to.be.oneOf([\"UNVERIFIED\", \"VERIFIED\"]);\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{cosadmin_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"publishStatus\": \"ACTIVE\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/cat/item?id={{databank_item_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "cat",
+                "item"
+              ],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "{{databank_item_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /cat/item – Patch Item Metadata 200 (itemStatus)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", () => pm.response.to.have.status(200));\r\n\r\nconst jsonData = pm.response.json();\r\n\r\npm.test(\"Response has success envelope\", () => {\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:success\");\r\n    pm.expect(jsonData.title).to.eql(\"Success\");\r\n    pm.expect(jsonData).to.have.property(\"detail\");\r\n});\r\n\r\npm.test(\"Result confirms the patched item id\", () => {\r\n    pm.expect(jsonData.result).to.be.an(\"array\");\r\n    pm.expect(jsonData.result[0].id).to.eql(pm.variables.get(\"aimodel_item_id\"));\r\n});\r\n\r\nconst getItemRequest = {\r\n    url: pm.variables.replaceIn(\"{{base_url}}/iudx/v2/cat/item?id={{aimodel_item_id}}\"),\r\n    method: \"GET\",\r\n    header: {\r\n        Authorization: \"Bearer \" + pm.variables.get(\"provider_token\")\r\n    }\r\n};\r\n\r\nsetTimeout(() => {\r\n    pm.sendRequest(getItemRequest, (err, res) => {\r\n        const item = res.json().result[0];\r\n\r\n        pm.test(\"itemStatus updated to VERIFIED\", () => {\r\n            pm.expect(err).to.be.null;\r\n            pm.expect(item.itemStatus).to.eql(\"VERIFIED\");\r\n        });\r\n\r\n        pm.test(\"publishStatus unaffected by itemStatus change\", () => {\r\n            pm.expect(item.publishStatus).to.eql(\"ACTIVE\");\r\n        });\r\n    });\r\n}, 2000);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{orgadmin_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"itemStatus\": \"VERIFIED\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/cat/item?id={{aimodel_item_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "cat",
+                "item"
+              ],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "{{aimodel_item_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /cat/item – Patch Item Metadata 200 (itemStatus, databank)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", () => pm.response.to.have.status(200));\r\n\r\nconst jsonData = pm.response.json();\r\n\r\npm.test(\"Response has success envelope\", () => {\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:success\");\r\n    pm.expect(jsonData.title).to.eql(\"Success\");\r\n    pm.expect(jsonData).to.have.property(\"detail\");\r\n});\r\n\r\npm.test(\"Result confirms the patched item id\", () => {\r\n    pm.expect(jsonData.result).to.be.an(\"array\");\r\n    pm.expect(jsonData.result[0].id).to.eql(pm.variables.get(\"databank_item_id\"));\r\n});\r\n\r\n// Allow time for eventual consistency before verifying via GET\r\nawait new Promise((resolve) => setTimeout(resolve, 2000));\r\n\r\nconst getItemRequest = {\r\n    url: pm.variables.replaceIn(\"{{base_url}}/iudx/v2/cat/item?id={{databank_item_id}}\"),\r\n    method: \"GET\",\r\n    header: {\r\n        Authorization: \"Bearer \" + pm.variables.get(\"provider_token\")\r\n    }\r\n};\r\n\r\nconst res = await pm.sendRequest(getItemRequest);\r\nconst item = res.json().result[0];\r\n\r\npm.test(\"itemStatus updated to VERIFIED\", () => {\r\n    pm.expect(item.itemStatus).to.eql(\"VERIFIED\");\r\n});\r\n\r\npm.test(\"publishStatus unaffected by itemStatus change\", () => {\r\n    pm.expect(item.publishStatus).to.eql(\"ACTIVE\");\r\n});\r\n\r\npm.test(\"accessPolicy unaffected by itemStatus change\", () => {\r\n    pm.expect(item.accessPolicy).to.eql(\"RESTRICTED\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{orgadmin_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"itemStatus\": \"VERIFIED\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/cat/item?id={{databank_item_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "cat",
+                "item"
+              ],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "{{databank_item_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /cat/item – Patch Item Metadata 403 (provider - publishStatus)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 403\", () => pm.response.to.have.status(403));\r\n\r\nconst jsonData = pm.response.json();\r\n\r\npm.test(\"Response has error envelope\", () => {\r\n    pm.expect(jsonData.type).to.include(\"controlPlane\");\r\n    pm.expect(jsonData).to.have.property(\"detail\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{provider_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"publishStatus\": \"PENDING\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/cat/item?id={{aimodel_item_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "cat",
+                "item"
+              ],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "{{aimodel_item_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /cat/item – Patch Item Metadata 403 (provider - itemStatus)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 403\", () => pm.response.to.have.status(403));\r\n\r\nconst jsonData = pm.response.json();\r\n\r\npm.test(\"Response has error envelope\", () => {\r\n    pm.expect(jsonData.type).to.include(\"controlPlane\");\r\n    pm.expect(jsonData).to.have.property(\"detail\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{provider_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"itemStatus\": \"VERIFIED\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/cat/item?id={{aimodel_item_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "cat",
+                "item"
+              ],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "{{aimodel_item_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /cat/item – Patch Item Metadata 403 (consumer)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 403\", () => pm.response.to.have.status(403));\r\n\r\nconst jsonData = pm.response.json();\r\n\r\npm.test(\"Response has error envelope\", () => {\r\n    pm.expect(jsonData.type).to.include(\"controlPlane\");\r\n    pm.expect(jsonData).to.have.property(\"detail\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{consumer_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"label\": \"Should not be allowed\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/cat/item?id={{aimodel_item_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "cat",
+                "item"
+              ],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "{{aimodel_item_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /cat/item – Patch Item Metadata 403 (new_user_token, role-less — systemic check)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 403\", () => pm.response.to.have.status(403));\r\n\r\nconst jsonData = pm.response.json();\r\n\r\npm.test(\"Response has error envelope\", () => {\r\n    pm.expect(jsonData.type).to.include(\"controlPlane\");\r\n    pm.expect(jsonData).to.have.property(\"detail\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{new_user_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"label\": \"Should not be allowed\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/cat/item?id={{aimodel_item_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "cat",
+                "item"
+              ],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "{{aimodel_item_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /cat/item – Patch Item Metadata 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 400\", () => pm.response.to.have.status(400));\r\n\r\nconst jsonData = pm.response.json();\r\n\r\npm.test(\"Response has error envelope\", () => {\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:badRequest\");\r\n    pm.expect(jsonData.title).to.eql(\"Bad Request\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{provider_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/cat/item?id={{aimodel_item_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "cat",
+                "item"
+              ],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "{{aimodel_item_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /cat/item – Patch Item Metadata 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", () => pm.response.to.have.status(401));\r\n\r\nconst jsonData = pm.response.json();\r\n\r\npm.test(\"Response has error envelope\", () => {\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:notAuthorized\");\r\n    pm.expect(jsonData.title).to.eql(\"Not Authorized\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"label\": \"Should not be allowed\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/cat/item?id={{aimodel_item_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "cat",
+                "item"
+              ],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "{{aimodel_item_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /cat/item – Patch Item Metadata 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", () => pm.response.to.have.status(404));\r\n\r\nconst jsonData = pm.response.json();\r\n\r\npm.test(\"Response has error envelope\", () => {\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:notFound\");\r\n    pm.expect(jsonData.title).to.eql(\"Not Found\");\r\n    pm.expect(jsonData).to.have.property(\"detail\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{provider_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"label\": \"Should not be allowed\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/cat/item?id={{nonExistentRsId}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "cat",
+                "item"
+              ],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "{{nonExistentRsId}}"
+                }
               ]
             }
           },
@@ -19781,6 +22011,346 @@
           "response": []
         },
         {
+          "name": "PATCH /cat/organisation/asset – Update Asset Status 200 (status = Active) Databank",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {\r\n    pm.response.to.have.status(200);\r\n});\r\n\r\npm.test(\"Response has success envelope\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:success\");\r\n    pm.expect(jsonData.title).to.eql(\"Success\");\r\n});\r\n\r\npm.test(\"Detail message confirms patch success\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.detail).to.eql(\"Success: Item patched successfully\");\r\n});\r\n\r\npm.test(\"Result is an array containing exactly one item id\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.result).to.be.an(\"array\").with.lengthOf(1);\r\n    pm.expect(jsonData.result[0]).to.have.property(\"id\");\r\n});\r\n\r\npm.test(\"Response confirms the same item id that was patched\", function () {\r\n    const jsonData = pm.response.json();\r\n    const requestedId = pm.request.url.query.get(\"id\");\r\n    pm.expect(jsonData.result[0].id).to.eql(requestedId,\r\n        \"Response confirmed a different item id than the one requested — possible wrong-record mutation\");\r\n});\r\n\r\npm.test(\"publishStatus value sent is a valid enum value\", function () {\r\n    const body = JSON.parse(pm.request.body.raw);\r\n    if (body.publishStatus) {\r\n        pm.expect([\"ACTIVE\", \"PENDING\", \"DECLINED\", \"HIDE\"]).to.include(body.publishStatus);\r\n    }\r\n});\r\n\r\n// --- Follow-up GET (list endpoint, no id filter — find our item in the full list) ---\r\nawait new Promise((resolve) => setTimeout(resolve, 2000));\r\n\r\nconst getAssetRequest = {\r\n    url: pm.variables.replaceIn(\"{{base_url}}/iudx/v2/cat/organisation/asset\"),\r\n    method: \"GET\",\r\n    header: { Authorization: \"Bearer \" + pm.variables.get(\"orgadmin_token\") }\r\n};\r\n\r\nconst res = await pm.sendRequest(getAssetRequest);\r\nconst jsonResult = res.json();\r\n\r\npm.test(\"GET verification call succeeded\", () => {\r\n    pm.expect(res.code).to.eql(200);\r\n    pm.expect(jsonResult).to.have.property(\"result\");\r\n});\r\n\r\nconst asset = jsonResult.result.find(a => a.id === pm.variables.get(\"databank_item_id\"));\r\n\r\npm.test(\"Target DataBank item found in org asset list\", () => {\r\n    pm.expect(asset).to.not.be.undefined;\r\n});\r\n\r\npm.test(\"publishStatus actually persisted as ACTIVE\", () => {\r\n    pm.expect(asset.publishStatus).to.eql(\"ACTIVE\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{cosadmin_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"publishStatus\": \"ACTIVE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/cat/organisation/asset?id={{databank_item_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "cat",
+                "organisation",
+                "asset"
+              ],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "{{databank_item_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Provider Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", function () {\n    pm.response.to.have.status(200);\n});\n\nconst json = pm.response.json();\npm.test(\"Has access_token\", function () {\n    pm.expect(json).to.have.property(\"access_token\");\n});\n\npm.collectionVariables.set(\"provider_token\", json.access_token);\nconsole.log(\"Provider token saved.\");\n\nfunction getUserIdFromJwt(token) {\n    const payloadB64 = token.split(\".\")[1];\n    const base64 = payloadB64.replace(/-/g, \"+\").replace(/_/g, \"/\");\n    const padded = base64 + \"=\".repeat((4 - base64.length % 4) % 4);\n    const payload = JSON.parse(atob(padded));\n    return payload.sub;\n}\n\npm.collectionVariables.set(\"provider_user_id_1\", getUserIdFromJwt(json.access_token));\nconsole.log(\"Provider user id saved.\");"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}"
+                },
+                {
+                  "key": "username",
+                  "value": "{{provider_user}}"
+                },
+                {
+                  "key": "password",
+                  "value": "{{provider_pass}}"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{kc_host}}/realms/{{realm}}/protocol/openid-connect/token",
+              "host": [
+                "{{kc_host}}"
+              ],
+              "path": [
+                "realms",
+                "{{realm}}",
+                "protocol",
+                "openid-connect",
+                "token"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /cat/organisation/asset – Update Asset Status 200 (dataUploadStatus) Databank",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {\r\n    pm.response.to.have.status(200);\r\n});\r\n\r\npm.test(\"Response has success envelope\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:success\");\r\n    pm.expect(jsonData.title).to.eql(\"Success\");\r\n});\r\n\r\npm.test(\"Detail message confirms patch success\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.detail).to.eql(\"Success: Item patched successfully\");\r\n});\r\n\r\npm.test(\"Result is an array containing exactly one item id\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.result).to.be.an(\"array\").with.lengthOf(1);\r\n    pm.expect(jsonData.result[0]).to.have.property(\"id\");\r\n});\r\n\r\npm.test(\"Response confirms the same item id that was patched\", function () {\r\n    const jsonData = pm.response.json();\r\n    const requestedId = pm.request.url.query.get(\"id\");\r\n    pm.expect(jsonData.result[0].id).to.eql(requestedId);\r\n});\r\n\r\n// --- Follow-up GET (list endpoint) to verify dataUploadStatus persisted ---\r\nawait new Promise((resolve) => setTimeout(resolve, 2000));\r\n\r\nconst getAssetRequest = {\r\n    url: pm.variables.replaceIn(\"{{base_url}}/iudx/v2/cat/organisation/asset\"),\r\n    method: \"GET\",\r\n    header: { Authorization: \"Bearer \" + pm.variables.get(\"orgadmin_token\") }\r\n};\r\n\r\nconst res = await pm.sendRequest(getAssetRequest);\r\nconst jsonResult = res.json();\r\n\r\npm.test(\"GET verification call succeeded\", () => {\r\n    pm.expect(res.code).to.eql(200);\r\n    pm.expect(jsonResult).to.have.property(\"result\");\r\n});\r\n\r\nconst asset = jsonResult.result.find(a => a.id === pm.variables.get(\"databank_item_id\"));\r\n\r\npm.test(\"Target DataBank item found in org asset list\", () => {\r\n    pm.expect(asset).to.not.be.undefined;\r\n});\r\n\r\npm.test(\"dataUploadStatus actually persisted as true\", () => {\r\n    pm.expect(asset.dataUploadStatus).to.eql(true);\r\n});\r\n\r\npm.test(\"publishStatus unaffected by dataUploadStatus change\", () => {\r\n    pm.expect(asset.publishStatus).to.eql(\"ACTIVE\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{provider_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"dataUploadStatus\": true }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/cat/organisation/asset?id={{databank_item_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "cat",
+                "organisation",
+                "asset"
+              ],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "{{databank_item_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /cat/organisation/asset – Update Asset Status 200 (itemStatus=VERIFIED) Databank",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {\r\n    pm.response.to.have.status(200);\r\n});\r\n\r\npm.test(\"Response has success envelope\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:success\");\r\n    pm.expect(jsonData.title).to.eql(\"Success\");\r\n});\r\n\r\npm.test(\"Detail message confirms patch success\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.detail).to.eql(\"Success: Item patched successfully\");\r\n});\r\n\r\npm.test(\"Result is an array containing exactly one item id\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.result).to.be.an(\"array\").with.lengthOf(1);\r\n    pm.expect(jsonData.result[0]).to.have.property(\"id\");\r\n});\r\n\r\npm.test(\"Response confirms the same item id that was patched\", function () {\r\n    const jsonData = pm.response.json();\r\n    const requestedId = pm.request.url.query.get(\"id\");\r\n    pm.expect(jsonData.result[0].id).to.eql(requestedId);\r\n});\r\n\r\nawait new Promise((resolve) => setTimeout(resolve, 2000));\r\n\r\nconst getAssetRequest = {\r\n    url: pm.variables.replaceIn(\"{{base_url}}/iudx/v2/cat/organisation/asset\"),\r\n    method: \"GET\",\r\n    header: { Authorization: \"Bearer \" + pm.variables.get(\"orgadmin_token\") }\r\n};\r\n\r\nconst res = await pm.sendRequest(getAssetRequest);\r\nconst jsonResult = res.json();\r\n\r\npm.test(\"GET verification call succeeded\", () => {\r\n    pm.expect(res.code).to.eql(200);\r\n    pm.expect(jsonResult).to.have.property(\"result\");\r\n});\r\n\r\nconst asset = jsonResult.result.find(a => a.id === pm.variables.get(\"databank_item_id\"));\r\n\r\npm.test(\"Target DataBank item found in org asset list\", () => {\r\n    pm.expect(asset).to.not.be.undefined;\r\n});\r\n\r\npm.test(\"itemStatus actually persisted as VERIFIED\", () => {\r\n    pm.expect(asset.itemStatus).to.eql(\"VERIFIED\");\r\n});\r\n\r\npm.test(\"dataUploadStatus unaffected by itemStatus change\", () => {\r\n    pm.expect(asset.dataUploadStatus).to.eql(true);\r\n});\r\n\r\npm.test(\"publishStatus unaffected by itemStatus change\", () => {\r\n    pm.expect(asset.publishStatus).to.eql(\"ACTIVE\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{orgadmin_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"itemStatus\": \"VERIFIED\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/cat/organisation/asset?id={{databank_item_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "cat",
+                "organisation",
+                "asset"
+              ],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "{{databank_item_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Provider Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", function () {\n    pm.response.to.have.status(200);\n});\n\nconst json = pm.response.json();\npm.test(\"Has access_token\", function () {\n    pm.expect(json).to.have.property(\"access_token\");\n});\n\npm.collectionVariables.set(\"provider_token\", json.access_token);\nconsole.log(\"Provider token saved.\");\n\nfunction getUserIdFromJwt(token) {\n    const payloadB64 = token.split(\".\")[1];\n    const base64 = payloadB64.replace(/-/g, \"+\").replace(/_/g, \"/\");\n    const padded = base64 + \"=\".repeat((4 - base64.length % 4) % 4);\n    const payload = JSON.parse(atob(padded));\n    return payload.sub;\n}\n\npm.collectionVariables.set(\"provider_user_id_1\", getUserIdFromJwt(json.access_token));\nconsole.log(\"Provider user id saved.\");"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}"
+                },
+                {
+                  "key": "username",
+                  "value": "{{provider_user}}"
+                },
+                {
+                  "key": "password",
+                  "value": "{{provider_pass}}"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{kc_host}}/realms/{{realm}}/protocol/openid-connect/token",
+              "host": [
+                "{{kc_host}}"
+              ],
+              "path": [
+                "realms",
+                "{{realm}}",
+                "protocol",
+                "openid-connect",
+                "token"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /cat/organisation/asset – Update Asset Status 200 (itemStatus=SFTP) Databank",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {\r\n    pm.response.to.have.status(200);\r\n});\r\n\r\npm.test(\"Response has success envelope\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:success\");\r\n    pm.expect(jsonData.title).to.eql(\"Success\");\r\n});\r\n\r\npm.test(\"Detail message confirms patch success\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.detail).to.eql(\"Success: Item patched successfully\");\r\n});\r\n\r\npm.test(\"Result is an array containing exactly one item id\", function () {\r\n    const jsonData = pm.response.json();\r\n    pm.expect(jsonData.result).to.be.an(\"array\").with.lengthOf(1);\r\n    pm.expect(jsonData.result[0]).to.have.property(\"id\");\r\n});\r\n\r\npm.test(\"Response confirms the same item id that was patched\", function () {\r\n    const jsonData = pm.response.json();\r\n    const requestedId = pm.request.url.query.get(\"id\");\r\n    pm.expect(jsonData.result[0].id).to.eql(requestedId);\r\n});\r\n\r\nawait new Promise((resolve) => setTimeout(resolve, 2000));\r\n\r\nconst getAssetRequest = {\r\n    url: pm.variables.replaceIn(\"{{base_url}}/iudx/v2/cat/organisation/asset\"),\r\n    method: \"GET\",\r\n    header: { Authorization: \"Bearer \" + pm.variables.get(\"orgadmin_token\") }\r\n};\r\n\r\nconst res = await pm.sendRequest(getAssetRequest);\r\nconst jsonResult = res.json();\r\n\r\npm.test(\"GET verification call succeeded\", () => {\r\n    pm.expect(res.code).to.eql(200);\r\n    pm.expect(jsonResult).to.have.property(\"result\");\r\n});\r\n\r\nconst asset = jsonResult.result.find(a => a.id === pm.variables.get(\"databank_item_id\"));\r\n\r\npm.test(\"Target DataBank item found in org asset list\", () => {\r\n    pm.expect(asset).to.not.be.undefined;\r\n});\r\n\r\npm.test(\"itemStatus actually persisted as SFTP\", () => {\r\n    pm.expect(asset.itemStatus).to.eql(\"SFTP\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{provider_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"itemStatus\": \"SFTP\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/cat/organisation/asset?id={{databank_item_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "cat",
+                "organisation",
+                "asset"
+              ],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "{{databank_item_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
           "name": "PATCH /cat/organisation/asset – Update Asset Status 400",
           "event": [
             {
@@ -19915,15 +22485,6 @@
           "name": "PATCH /cat/organisation/asset – Update Asset Status 403",
           "event": [
             {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  ""
-                ]
-              }
-            },
-            {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
@@ -19955,7 +22516,7 @@
               }
             },
             "url": {
-              "raw": "{{base_url}}/iudx/v2/cat/organisation/asset?id={{aimodel_item_id}}",
+              "raw": "{{base_url}}/iudx/v2/cat/organisation/asset?id={{databank_item_id}}",
               "host": [
                 "{{base_url}}"
               ],
@@ -19969,7 +22530,7 @@
               "query": [
                 {
                   "key": "id",
-                  "value": "{{aimodel_item_id}}"
+                  "value": "{{databank_item_id}}"
                 }
               ]
             }
@@ -24387,7 +26948,7 @@
               }
             ],
             "url": {
-              "raw": "{{acl_url}}/iudx/acl/apd/v2/access_request/consumer",
+              "raw": "{{acl_url}}/iudx/acl/apd/v2/access_request/consumer?size=100",
               "host": [
                 "{{acl_url}}"
               ],
@@ -24398,6 +26959,12 @@
                 "v2",
                 "access_request",
                 "consumer"
+              ],
+              "query": [
+                {
+                  "key": "size",
+                  "value": "100"
+                }
               ]
             }
           },
@@ -25316,7 +27883,7 @@
               }
             ],
             "url": {
-              "raw": "{{acl_url}}/iudx/acl/apd/v2/access_request/consumer",
+              "raw": "{{acl_url}}/iudx/acl/apd/v2/access_request/consumer?size=100",
               "host": [
                 "{{acl_url}}"
               ],
@@ -25327,6 +27894,12 @@
                 "v2",
                 "access_request",
                 "consumer"
+              ],
+              "query": [
+                {
+                  "key": "size",
+                  "value": "100"
+                }
               ]
             }
           },
@@ -25878,7 +28451,7 @@
               }
             ],
             "url": {
-              "raw": "{{acl_url}}/iudx/acl/apd/v2/access_request/consumer",
+              "raw": "{{acl_url}}/iudx/acl/apd/v2/access_request/consumer?size=100",
               "host": [
                 "{{acl_url}}"
               ],
@@ -25889,6 +28462,12 @@
                 "v2",
                 "access_request",
                 "consumer"
+              ],
+              "query": [
+                {
+                  "key": "size",
+                  "value": "100"
+                }
               ]
             }
           },
@@ -26888,7 +29467,7 @@
               }
             ],
             "url": {
-              "raw": "{{acl_url}}/iudx/acl/apd/v2/policy/provider",
+              "raw": "{{acl_url}}/iudx/acl/apd/v2/policy/provider?size=100",
               "host": [
                 "{{acl_url}}"
               ],
@@ -26899,6 +29478,12 @@
                 "v2",
                 "policy",
                 "provider"
+              ],
+              "query": [
+                {
+                  "key": "size",
+                  "value": "100"
+                }
               ]
             }
           },
@@ -27799,7 +30384,7 @@
               }
             ],
             "url": {
-              "raw": "{{acl_url}}/iudx/acl/apd/v2/access_request/organisation",
+              "raw": "{{acl_url}}/iudx/acl/apd/v2/access_request/organisation?size=100",
               "host": [
                 "{{acl_url}}"
               ],
@@ -27810,6 +30395,12 @@
                 "v2",
                 "access_request",
                 "organisation"
+              ],
+              "query": [
+                {
+                  "key": "size",
+                  "value": "100"
+                }
               ]
             }
           },
@@ -29066,6 +31657,241 @@
           "response": []
         }
       ]
+    },
+    {
+      "name": "22 - Role & User Deletes",
+      "item": [
+        {
+          "name": "DELETE /user/custom/role – Delete by RequestId 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {\r\n    pm.response.to.have.status(200);\r\n});\r\n\r\nconst jsonData = pm.response.json();\r\n\r\npm.test(\"Response type and title match spec\", function () {\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:success\");\r\n    pm.expect(jsonData.title).to.eql(\"Success\");\r\n});\r\n\r\npm.test(\"Detail field present\", function () {\r\n    pm.expect(jsonData).to.have.property(\"detail\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{cosadmin_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"requestId\": \"{{custom_role_id}}\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/user/custom/role",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "user",
+                "custom",
+                "role"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /user/custom/role – Delete by RequestId 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 400\", function () {\r\n    pm.response.to.have.status(400);\r\n});\r\n\r\nconst jsonData = pm.response.json();\r\n\r\npm.test(\"Response type and title match spec\", function () {\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:badRequest\");\r\n    pm.expect(jsonData.title).to.eql(\"Bad Request\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{cosadmin_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"requestId\": \"{{custom_role_id}}\" ",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/user/custom/role",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "user",
+                "custom",
+                "role"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /user/custom/role – Delete by RequestId 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {\r\n    pm.response.to.have.status(401);\r\n});\r\n\r\nconst jsonData = pm.response.json();\r\n\r\npm.test(\"Response type and title match spec\", function () {\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:notAuthorized\");\r\n    pm.expect(jsonData.title).to.eql(\"Not Authorized\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"requestId\": \"{{custom_role_id}}\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/user/custom/role",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "user",
+                "custom",
+                "role"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /user/custom/role – Delete by RequestId 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 403\", function () {\r\n    pm.response.to.have.status(403);\r\n});\r\n\r\nconst jsonData = pm.response.json();\r\n\r\npm.test(\"Response type and title match spec\", function () {\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:forbidden\");\r\n    pm.expect(jsonData.title).to.eql(\"Forbidden\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{consumer_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"requestId\": \"{{custom_role_id}}\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/user/custom/role",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "user",
+                "custom",
+                "role"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /user/custom/role – Delete by RequestId 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {\r\n    pm.response.to.have.status(404);\r\n});\r\n\r\nconst jsonData = pm.response.json();\r\n\r\npm.test(\"Response type and title match spec\", function () {\r\n    pm.expect(jsonData.type).to.eql(\"urn:dx:controlPlane:notFound\");\r\n    pm.expect(jsonData.title).to.eql(\"Not Found\");\r\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{cosadmin_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"requestId\": \"{{nonExistentRsId}}\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/iudx/v2/auth/user/custom/role",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iudx",
+                "v2",
+                "auth",
+                "user",
+                "custom",
+                "role"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
     }
   ],
   "event": [
@@ -29145,7 +31971,7 @@
     },
     {
       "key": "custom_role_id",
-      "value": "109579cf-10cf-4ab6-81a0-3c666aa97fc1"
+      "value": "7fcc90e6-97ad-46a1-baad-5781e506fb61"
     },
     {
       "key": "credit_request_id",
@@ -29157,7 +31983,7 @@
     },
     {
       "key": "aimodel_item_id",
-      "value": "99220a1e-1c9d-4c3e-b7cf-513b1a8d811a"
+      "value": "ab58efe1-8179-409b-8074-95d2160b4fa9"
     },
     {
       "key": "app_token",
@@ -29165,7 +31991,7 @@
     },
     {
       "key": "client_secret",
-      "value": "ead67187e47351bc646464fa614455349d511079"
+      "value": "ecd82007de908d5732b1c7c49a75e18ade4b6288"
     },
     {
       "key": "user_feedback_id",
@@ -29185,11 +32011,11 @@
     },
     {
       "key": "getTokenFn",
-      "value": ""
+      "value": "\nfunction getToken(role) {\n    const kc = pm.environment.get('kc_url');\n    const realm = pm.environment.get('realm');\n    const clientId = pm.environment.get('client_id');\n    const username = pm.environment.get(role + '_user');\n    const password = pm.environment.get(role + '_pass');\n    const tokenVar = role + '_token';\n\n    const existing = pm.collectionVariables.get(tokenVar);\n    if (existing) {\n        try {\n            const payload = JSON.parse(atob(existing.split('.')[1]));\n            if (payload.exp * 1000 > Date.now() + 30000) return;\n        } catch(e) {}\n    }\n\n    pm.sendRequest({\n        url: kc + '/realms/' + realm + '/protocol/openid-connect/token',\n        method: 'POST',\n        header: { 'Content-Type': 'application/x-www-form-urlencoded' },\n        body: {\n            mode: 'urlencoded',\n            urlencoded: [\n                { key: 'grant_type', value: 'password' },\n                { key: 'client_id', value: clientId },\n                { key: 'username', value: username },\n                { key: 'password', value: password }\n            ]\n        }\n    }, function (err, res) {\n        if (err) { console.error('Token fetch failed:', err); return; }\n        pm.collectionVariables.set(tokenVar, res.json().access_token);\n    });\n}\n"
     },
     {
       "key": "client_id",
-      "value": "65e0f6e5-13d7-4c33-91ac-8be6b5fc018b"
+      "value": "e3b56300-6b15-44ad-ab97-75df3d37affd"
     },
     {
       "key": "realm",
@@ -29233,47 +32059,47 @@
     },
     {
       "key": "cosadmin_token",
-      "value": ""
+      "value": "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICI5ajdoMFVkUENrNS1reDRPejhMNGtzeVRSV09vNEFZLUV2ZXhpYl9SRHFnIn0.eyJleHAiOjE3OTMzNDA2NjksImlhdCI6MTc5MzM0MDM2OSwianRpIjoib25ydHJvOmFlOTczMDA2LTAwN2UtN2QzZi03NTdjLWIzYjFlYTEwN2YzZCIsImlzcyI6Imh0dHBzOi8vdjIuZGV2Lml1ZHguaW8vYXV0aC9yZWFsbXMvaXVkeC12MiIsImF1ZCI6ImFjY291bnQiLCJzdWIiOiJhNjc3YmZmYi04ZTFmLTQ5MTAtYThkMS1kMTYyMDNlOGYzMjciLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJmcm9udGVuZC1jbGllbnQiLCJzaWQiOiJmODljZmY3Zi05NDhmLTQzOTItOTQ5Yi0yMDA5NjU2MWJkNzAiLCJhY3IiOiIxIiwiYWxsb3dlZC1vcmlnaW5zIjpbImh0dHA6Ly9sb2NhbGhvc3Q6NDAwNyIsIioiLCJodHRwOi8vbG9jYWxob3N0OjMwMDAiLCJodHRwczovL2l1ZHhxYS1kZXYuc2xpY2VhcnJvdy5jb20iXSwicmVhbG1fYWNjZXNzIjp7InJvbGVzIjpbInN1cGVyc2V0X0FkbWluIiwib2ZmbGluZV9hY2Nlc3MiLCJkZWZhdWx0LXJvbGVzLXRnZGV4LXBpbG90IiwiY29uc3VtZXIiLCJjb3NfYWRtaW4iXX0sInJlc291cmNlX2FjY2VzcyI6eyJhY2NvdW50Ijp7InJvbGVzIjpbIm1hbmFnZS1hY2NvdW50IiwibWFuYWdlLWFjY291bnQtbGlua3MiLCJ2aWV3LXByb2ZpbGUiXX19LCJzY29wZSI6InByb2ZpbGUgZW1haWwiLCJvcmdhbmlzYXRpb25faWQiOiIxMjkyYjEwYy1iMDg4LTQ5NTUtYWVhZS05MGI0Mjc1NzYyMDYiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwia3ljX3ZlcmlmaWVkIjpmYWxzZSwibmFtZSI6ImNvcyBhZG1pbiIsImVtYWlsIjoiYWRtaW4uY29zLml1ZHgudjJAZGF0YWthdmVyaS5vcmcifQ.igyiaxCF5O0YDjh91OoWh0rx-Gzpn7CC1jbY5HrfiZv0fncWM3W7F49D06e7MLEf6kQfrNG1iSJg-OKDUCNabteVnQhfRivlrUA7wCVwQF1r4q7gM9orvzgH2VrhtbVkqaxyfCvVVFy8eA_ck90yjo7eQmCIzQ8IdB5cf1LuL5GAkDuqgRvDX0xsk4SGEfVJ20zTPsK04hLsgskqS35MyiP0LkKRZ66EU9SKacYyMQbTipsuc1rc-CBBCV-NMFhEASWo5K8yiqF7aK8aCsWUJJZqmn1RoTuP86eeztCsMAgUvUJSUYyy-HhC34lAFW-oppJ56wLBbKPXfDq7gVrr2A"
     },
     {
       "key": "new_user_token",
-      "value": ""
+      "value": "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICI5ajdoMFVkUENrNS1reDRPejhMNGtzeVRSV09vNEFZLUV2ZXhpYl9SRHFnIn0.eyJleHAiOjE3OTMzNDA1NjYsImlhdCI6MTc5MzM0MDI2NiwianRpIjoib25ydHJvOjg0NjVlM2JkLTU4OTgtZTFlYS0zOTI2LTI3NzRlNjZkYTcyNSIsImlzcyI6Imh0dHBzOi8vdjIuZGV2Lml1ZHguaW8vYXV0aC9yZWFsbXMvaXVkeC12MiIsImF1ZCI6ImFjY291bnQiLCJzdWIiOiI3ODM4MzY1ZS00N2VkLTQ2YjItYjk5Mi0yMjIxODVmMjcwYjYiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJmcm9udGVuZC1jbGllbnQiLCJzaWQiOiIxNTc3ZmE5Ni0zMDBhLTQwYmItOWNhYS00YWNhNzYyNDZkNzYiLCJhY3IiOiIxIiwiYWxsb3dlZC1vcmlnaW5zIjpbImh0dHA6Ly9sb2NhbGhvc3Q6NDAwNyIsIioiLCJodHRwOi8vbG9jYWxob3N0OjMwMDAiLCJodHRwczovL2l1ZHhxYS1kZXYuc2xpY2VhcnJvdy5jb20iXSwicmVhbG1fYWNjZXNzIjp7InJvbGVzIjpbIm9mZmxpbmVfYWNjZXNzIiwiZGVmYXVsdC1yb2xlcy10Z2RleC1waWxvdCIsImNvbnN1bWVyIl19LCJyZXNvdXJjZV9hY2Nlc3MiOnsiYWNjb3VudCI6eyJyb2xlcyI6WyJtYW5hZ2UtYWNjb3VudCIsIm1hbmFnZS1hY2NvdW50LWxpbmtzIiwidmlldy1wcm9maWxlIl19fSwic2NvcGUiOiJwcm9maWxlIGVtYWlsIiwiZW1haWxfdmVyaWZpZWQiOnRydWUsIm5hbWUiOiJTdXNoaWwgVGhpbmduYW0iLCJlbWFpbCI6InN1c2hpbEBzaXJwaS5pbyJ9.N5VS4hQ3g8YUUfIToirIhDfCTjAiZuKDsceoNSvEU8XWtNHj6jj0LzwE0Y6i2rtgL2p9pQpiEmMQLsMdiS05Co2RlXT5iCEdUuVqSe-mMpttMKP58LGkmVrHUXOKS-hoMo-GjGn35Gn7VPYgH5v7Rko5YVEZLHvRLXPEERThagRJARARN-byBPnAuh9LDQ9Q5-GLDO_yLKFoLJDd1yClkFCRyO208Bt2npYVaIs_cseXg9MDiTEAE1L9xMZQLcmtIp5PeMs9QewQVslbh3G0wnFRHN4bsLI2bwJht0qfTxzXth8Eudnqopa_CbLdfT0oH5nahg9Mfdc4cJTIIhSnsQ"
     },
     {
       "key": "consumer_token",
-      "value": ""
+      "value": "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICI5ajdoMFVkUENrNS1reDRPejhMNGtzeVRSV09vNEFZLUV2ZXhpYl9SRHFnIn0.eyJleHAiOjE3OTMzNDA3MjIsImlhdCI6MTc5MzM0MDQyMiwianRpIjoib25ydHJvOjUzYmMwNzViLWNmOWQtMzIyZS01MDM3LWYwYTI2NTllMGFjYiIsImlzcyI6Imh0dHBzOi8vdjIuZGV2Lml1ZHguaW8vYXV0aC9yZWFsbXMvaXVkeC12MiIsImF1ZCI6ImFjY291bnQiLCJzdWIiOiJhODBjYTdmZi00Nzg1LTQ0NmUtYjEyMi05ODY3YjUwMTYwYzUiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJmcm9udGVuZC1jbGllbnQiLCJzaWQiOiJiYTExMWMwOS1iNjAwLTQ3M2QtOTNkMC01OWNjZGNmMzEzYTMiLCJhY3IiOiIxIiwiYWxsb3dlZC1vcmlnaW5zIjpbImh0dHA6Ly9sb2NhbGhvc3Q6NDAwNyIsIioiLCJodHRwOi8vbG9jYWxob3N0OjMwMDAiLCJodHRwczovL2l1ZHhxYS1kZXYuc2xpY2VhcnJvdy5jb20iXSwicmVhbG1fYWNjZXNzIjp7InJvbGVzIjpbImNvbXB1dGUiLCJvZmZsaW5lX2FjY2VzcyIsImN1c3RvbV9yb2xlIiwiZGVmYXVsdC1yb2xlcy10Z2RleC1waWxvdCIsImNvbnN1bWVyIl19LCJyZXNvdXJjZV9hY2Nlc3MiOnsiYWNjb3VudCI6eyJyb2xlcyI6WyJtYW5hZ2UtYWNjb3VudCIsIm1hbmFnZS1hY2NvdW50LWxpbmtzIiwidmlldy1wcm9maWxlIl19fSwic2NvcGUiOiJwcm9maWxlIGVtYWlsIiwiZW1haWxfdmVyaWZpZWQiOnRydWUsIm5hbWUiOiJEZWVwYWsgQ29uc3VtZXIiLCJkZWxlZ2F0aW9uX3Njb3BlIjpbXSwiZW1haWwiOiJkZWVwYWtAc2lycGkuaW8ifQ.Ou7yzH7zKnapm8vfbb7ylnuWsZXTtrYyYM9NKTN_5Wgw6bxeaPm0P2CP-CwSKtoeWK7XXxtzFYcfLZboIuWlAyg6dtbSDLX_iKijLf5tNtBFLYZvxHe60_LN7pr5NH1g50ZSpL8M3k8z3SgrPKz608bCJAt1Fao4vV7RbdK01ltA-xad4xk1da3i6PxxsgqrJ7eM3eRQQ4U4xTr3TpnxyJRrUDq1oRmiyYt1UrLa_NNWj0YTs2vc36-bjKYiB0VN09GjmN4KX6foSCoilPCEAUEK1E4XpgXwuetoqAXHkSUt_RqC4Z06z8q5-IgPsXy87CXmXargh-Khcp_SfkPDVA"
     },
     {
       "key": "orgadmin_token",
-      "value": ""
+      "value": "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICI5ajdoMFVkUENrNS1reDRPejhMNGtzeVRSV09vNEFZLUV2ZXhpYl9SRHFnIn0.eyJleHAiOjE3OTMzNDA3MjgsImlhdCI6MTc5MzM0MDQyOCwianRpIjoib25ydHJvOjE2MjA2M2M5LWNiOGUtZWExNi0yZWIxLTRlOTVmODkzNmQ0NyIsImlzcyI6Imh0dHBzOi8vdjIuZGV2Lml1ZHguaW8vYXV0aC9yZWFsbXMvaXVkeC12MiIsImF1ZCI6ImFjY291bnQiLCJzdWIiOiI1NmM4YThhYi02NDI4LTQ0NDctOGE5ZC1mMzBhOGMxNjdmYTMiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJmcm9udGVuZC1jbGllbnQiLCJzaWQiOiJmMzVhNmMwOS03ZmZlLTRiYjEtODFlZi1jYTdhYjlkYzg1M2EiLCJhY3IiOiIxIiwiYWxsb3dlZC1vcmlnaW5zIjpbImh0dHA6Ly9sb2NhbGhvc3Q6NDAwNyIsIioiLCJodHRwOi8vbG9jYWxob3N0OjMwMDAiLCJodHRwczovL2l1ZHhxYS1kZXYuc2xpY2VhcnJvdy5jb20iXSwicmVhbG1fYWNjZXNzIjp7InJvbGVzIjpbIm9yZ19hZG1pbiIsInByb3ZpZGVyIiwib2ZmbGluZV9hY2Nlc3MiLCJkZWZhdWx0LXJvbGVzLXRnZGV4LXBpbG90IiwiY29uc3VtZXIiXX0sInJlc291cmNlX2FjY2VzcyI6eyJhY2NvdW50Ijp7InJvbGVzIjpbIm1hbmFnZS1hY2NvdW50IiwibWFuYWdlLWFjY291bnQtbGlua3MiLCJ2aWV3LXByb2ZpbGUiXX19LCJzY29wZSI6InByb2ZpbGUgZW1haWwiLCJvcmdhbmlzYXRpb25faWQiOiJjYjEwNDA3Yi1jZmI0LTQ4NjctYjM3MC0zNzVlYjA2NjA1YzAiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwibmFtZSI6IlZveGV2ZSBPcmdBZG1pbiIsIm9yZ2FuaXNhdGlvbl9uYW1lIjoiTWFoYUFHWCBvcmcgVGVzdCIsImVtYWlsIjoidm94ZXZlMzAxNEBiZXRzaHVicy5jb20ifQ.OLQELA-f-h8msSgUL3McXLETsLDZpTlhAQ0bMIUd90jy8pXnI0cpvQPATlcbo0O0ew5UEFgr05TW2DvH3EEsr24CfXyElLbM0X4ILRO0oZ48PWPits3CFKsYU4j77MRj-4nLwzDsAGapoBdT6zDnr_tel4_0bStPEl-uDSUT85CW8IXJyx1qvdj4b_rW6EkohCSYrCGdDvMXHIan-4syAnSwaAWv6R84Z6SoxAPGKnXYs9M-KqSnMM50IytMMF_faWvlaDm9j5rn7BC_0uP36B4m9udicDEwq4NazTiNhVlTNg14cgol6IeltVx55ukircB7iA684SxsjplyYLppQA"
     },
     {
       "key": "admin_user_token",
-      "value": ""
+      "value": "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICI5ajdoMFVkUENrNS1reDRPejhMNGtzeVRSV09vNEFZLUV2ZXhpYl9SRHFnIn0.eyJleHAiOjE3ODkxMzEwMjAsImlhdCI6MTc4OTEzMDcyMCwianRpIjoib25ydHJvOjljOTVlYzA2LWM2OWUtOGUxNy1kOWNjLThiMmQ5N2NmZTEzYyIsImlzcyI6Imh0dHBzOi8vdjIuZGV2Lml1ZHguaW8vYXV0aC9yZWFsbXMvaXVkeC12MiIsImF1ZCI6ImFjY291bnQiLCJzdWIiOiI4OTdhNmRkYS1lZjUzLTQ5YjktOWQ3NC01NWE4OGU4OWY3MGEiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJmcm9udGVuZC1jbGllbnQiLCJzaWQiOiI2ZjFmMjJiZC02MTExLTRjMGMtYTRjYi1iODcxMTYxYjRkMTMiLCJhY3IiOiIxIiwiYWxsb3dlZC1vcmlnaW5zIjpbImh0dHA6Ly9sb2NhbGhvc3Q6NDAwNyIsIioiLCJodHRwOi8vbG9jYWxob3N0OjMwMDAiXSwicmVhbG1fYWNjZXNzIjp7InJvbGVzIjpbIm9yZ19hZG1pbiIsInByb3ZpZGVyIiwib2ZmbGluZV9hY2Nlc3MiLCJkZWZhdWx0LXJvbGVzLXRnZGV4LXBpbG90IiwiY29uc3VtZXIiXX0sInJlc291cmNlX2FjY2VzcyI6eyJhY2NvdW50Ijp7InJvbGVzIjpbIm1hbmFnZS1hY2NvdW50IiwibWFuYWdlLWFjY291bnQtbGlua3MiLCJ2aWV3LXByb2ZpbGUiXX19LCJzY29wZSI6InByb2ZpbGUgZW1haWwiLCJvcmdhbmlzYXRpb25faWQiOiJlNjE4NDUyYy03NDFjLTQ2YjktOTQ5Yy00MzQzNjJiZjA1YjEiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwibmFtZSI6Im1haGFhZ3ggbmV3IHVzZXIiLCJvcmdhbmlzYXRpb25fbmFtZSI6IkF1dG9UZXN0T3JnLTk0Mjk3NyIsImVtYWlsIjoiamFmZWhpbDcwMEBkeXNvbmMuY29tIn0.LrCpe0Gss7qCHQh5KBXnHZFqd3gx1n895unP8MkKr18oQHbPjElXQ0QJ_lExLU39_wnlvZq8sMKF-UVBD8qWjCzjMFu9hEPdZJUSHIhnB8I2JFFtmnhPCn3aX5XkH34XTu_peG99qPvCuX-rdI6-MP2R9vFwLufZlx4xqpSFFe5vZli6hZC9XqFofAKnOa6AxbbVsVmp2tF28a75SpyZNmBgT3QbhdoqD4XFVd6IsG-MRYLZTAYaykUZrjSyYPNOgdVxMuy_8FgEQj6fG2PB9nmH2wZ_V546fzrUS-HshvR7omKtoBApKD2Gpq7ghJdyKq4cGZaGjYwYs7iSdIJbPg"
     },
     {
       "key": "member_token",
-      "value": ""
+      "value": "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICI5ajdoMFVkUENrNS1reDRPejhMNGtzeVRSV09vNEFZLUV2ZXhpYl9SRHFnIn0.eyJleHAiOjE3OTAxODM0MjgsImlhdCI6MTc5MDE4MzEyOCwianRpIjoib25ydHJvOmRmZTA5ODEyLWM3MGYtYjRiOS1hYjA4LTZhM2M2M2E3ZmUyZSIsImlzcyI6Imh0dHBzOi8vdjIuZGV2Lml1ZHguaW8vYXV0aC9yZWFsbXMvaXVkeC12MiIsImF1ZCI6ImFjY291bnQiLCJzdWIiOiIzZGM2NjFkYi00ODI3LTQ5ODctYTlkZS1jY2NlZGFmZWNmNTIiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJmcm9udGVuZC1jbGllbnQiLCJzaWQiOiI3NWJhYjRjZC0xYzM3LTRkMTYtYWFlOS1jMjY1MTc0NTdmNzIiLCJhY3IiOiIxIiwiYWxsb3dlZC1vcmlnaW5zIjpbImh0dHA6Ly9sb2NhbGhvc3Q6NDAwNyIsIioiLCJodHRwOi8vbG9jYWxob3N0OjMwMDAiXSwicmVhbG1fYWNjZXNzIjp7InJvbGVzIjpbIm9yZ19hZG1pbiIsInByb3ZpZGVyIiwib2ZmbGluZV9hY2Nlc3MiLCJkZWZhdWx0LXJvbGVzLXRnZGV4LXBpbG90IiwiY29uc3VtZXIiXX0sInJlc291cmNlX2FjY2VzcyI6eyJhY2NvdW50Ijp7InJvbGVzIjpbIm1hbmFnZS1hY2NvdW50IiwibWFuYWdlLWFjY291bnQtbGlua3MiLCJ2aWV3LXByb2ZpbGUiXX19LCJzY29wZSI6InByb2ZpbGUgZW1haWwiLCJvcmdhbmlzYXRpb25faWQiOiJjZjg2Y2MxOS1hOTc0LTQ0NGYtOTk3OS1mYWVlNjc3MjFiNzYiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwibmFtZSI6Im5ld3JlZ2lzdHJhY3Rpb24gbmFtZSIsIm9yZ2FuaXNhdGlvbl9uYW1lIjoiQXV0b1Rlc3RPcmctMjE0ODI0IiwiZW1haWwiOiJ2b2xvcm8yMjU3QGVwYXluaW5lLmNvbSJ9.gPy04RTDdYseeP4VJH0AFOn50jgXv3h411E2fZz6EXC9TGH13t3lH8S3TkTvL3T9M5k2j9Y741dDZVLT6zfz-mScAVByqYF_cpTo_s0Ruu41Lxj5jg06AXpH8mdrO5xw95J58O_k3ZBEiF44341t2gu_jnRQ8Ot9cR96DSGEqj70aAUE7RWPAAZvXwHUuwGAlc3RsY89X-c3D1yF3BxzuM8gpunN2Uoaq93q9Ws7WwiE3Ms-bfS457Bf46fgVwULBoLDl3ww3EQrL0z94PjDqMDNj1s2P3GsAy8Y_IV9O_69I_e6B5pCoKzeyEU2l9scv_8IId42DLBj-rWqsxp3lA"
     },
     {
       "key": "no_org_token",
-      "value": ""
+      "value": "null"
     },
     {
       "key": "provider_token",
-      "value": ""
+      "value": "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICI5ajdoMFVkUENrNS1reDRPejhMNGtzeVRSV09vNEFZLUV2ZXhpYl9SRHFnIn0.eyJleHAiOjE3OTMzNDA3MjcsImlhdCI6MTc5MzM0MDQyNywianRpIjoib25ydHJvOjc5MWU0OWRlLTMwYjYtNjQyMy1kM2RjLWJiNTljNzY1ZDEyNiIsImlzcyI6Imh0dHBzOi8vdjIuZGV2Lml1ZHguaW8vYXV0aC9yZWFsbXMvaXVkeC12MiIsImF1ZCI6ImFjY291bnQiLCJzdWIiOiJhNWQ5NTUyYS01NjdlLTRmODItYjcyNC1lMjc1ZDU2YzQxMTEiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJmcm9udGVuZC1jbGllbnQiLCJzaWQiOiJmYmIxMjNlNC05Y2M4LTQzZTYtYWQ0OC04NGIzMDk3YzAzZGQiLCJhY3IiOiIxIiwiYWxsb3dlZC1vcmlnaW5zIjpbImh0dHA6Ly9sb2NhbGhvc3Q6NDAwNyIsIioiLCJodHRwOi8vbG9jYWxob3N0OjMwMDAiLCJodHRwczovL2l1ZHhxYS1kZXYuc2xpY2VhcnJvdy5jb20iXSwicmVhbG1fYWNjZXNzIjp7InJvbGVzIjpbInByb3ZpZGVyIiwib2ZmbGluZV9hY2Nlc3MiLCJkZWZhdWx0LXJvbGVzLXRnZGV4LXBpbG90IiwiY29uc3VtZXIiXX0sInJlc291cmNlX2FjY2VzcyI6eyJhY2NvdW50Ijp7InJvbGVzIjpbIm1hbmFnZS1hY2NvdW50IiwibWFuYWdlLWFjY291bnQtbGlua3MiLCJ2aWV3LXByb2ZpbGUiXX19LCJzY29wZSI6InByb2ZpbGUgZW1haWwiLCJvcmdhbmlzYXRpb25faWQiOiJjYjEwNDA3Yi1jZmI0LTQ4NjctYjM3MC0zNzVlYjA2NjA1YzAiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwibmFtZSI6IlN1ZGVlcCBQcm92aWRlciIsIm9yZ2FuaXNhdGlvbl9uYW1lIjoiTWFoYUFHWCBvcmcgVGVzdCAxMjMiLCJlbWFpbCI6InN1ZGVlcEBzaXJwaS5pbyJ9.QN-Kbc1VDMyT5Yiag8CoEKkyjO6Mcsajbp9XE9dXJF5c7qGpul2XW6EiwXFCp4HGZz1yZSzar5ftrZAsVvPDUNeDR98Gz9X7BKGUk2WF4voYugU0OYGaXV_6zl2lGoRq52vlaIHD41HbEJJYWt0JyUXRX04MYCN3IdiE-MoN2Ei6dIvjv3-I3LYlXjFXZgZfZHlO2OHiu10qHZ2XIvNujNNIj3YQrkoo37_r0d8hN0rI3VYsA8iG16xSviVcNnn_XNfYR8ZToaStFwJ8QjVXo7QUkW2wsG3_biLDligGIEIaOIwpM1crhPJIdF38AYMPCs1YbuHvNex9Itj7LIhuOw"
     },
     {
       "key": "credit_request_id_2",
-      "value": "04aa84ca-230f-417d-b380-475acc7a1682"
+      "value": "79a79e21-da25-4144-bd11-31ad6a7f255a"
     },
     {
       "key": "credit_request_id_3",
-      "value": "ea530308-ddcd-4e42-8077-c9bbc50840c9"
+      "value": "55d6c808-17bc-42ee-a6b1-d75aac710b03"
     },
     {
       "key": "credit_request_id_1",
-      "value": "4a2d5aeb-126e-40f7-a5b1-3d343753a67e"
+      "value": "ea99b76c-ae86-4958-af91-090a52f95311"
     },
     {
       "key": "consumer_user_id_1",
@@ -29285,7 +32111,7 @@
     },
     {
       "key": "delegation_id_1",
-      "value": "13563652-b3f7-44a1-8533-ca808dcdbe5b"
+      "value": "1444dfb5-1c1c-465d-b3f2-d7747cb81ecf"
     },
     {
       "key": "scenario",
@@ -29293,15 +32119,15 @@
     },
     {
       "key": "delegation_id_2",
-      "value": "fc0c6520-7fb7-4701-a04c-cebbe922027d"
+      "value": "5e09c067-a69a-4a45-91e7-50e24a73a26c"
     },
     {
       "key": "databank_item_id",
-      "value": "fe049ca6-ec10-4ffd-975c-6bae0d5f3be6"
+      "value": "780edec6-303f-4166-b8cc-dfe9b073ca5f"
     },
     {
       "key": "apps_item_id",
-      "value": "193ca346-bf34-462f-96d7-362f99fc0393"
+      "value": "78d6d4fc-4f02-4c55-bf4c-82542a0b79cb"
     },
     {
       "key": "aimodel_item_name_delete",
@@ -29321,11 +32147,11 @@
     },
     {
       "key": "provider_asset_id",
-      "value": "fe049ca6-ec10-4ffd-975c-6bae0d5f3be6"
+      "value": "7fc54d78-710b-4307-9100-e8916f4825cf"
     },
     {
       "key": "asset_request_id",
-      "value": "47b20350-993d-4663-8461-f50ffa94bf76"
+      "value": "a3a68fd6-eb3e-4772-befc-1fb001cd70e0"
     },
     {
       "key": "delete_asset_request_id",
@@ -29337,7 +32163,7 @@
     },
     {
       "key": "subscription_id",
-      "value": "d1f3f938-f1b9-4896-8e66-305deb4583fc"
+      "value": "94114ca6-050f-4fa8-9b8d-40099aa0b38b"
     },
     {
       "key": "databank_itemname_feedback",
@@ -29345,19 +32171,19 @@
     },
     {
       "key": "feedback_test_item_id",
-      "value": "176af17e-d9e6-4472-badb-2099b478cf79"
+      "value": "7fc54d78-710b-4307-9100-e8916f4825cf"
     },
     {
       "key": "feedback_record_id",
-      "value": "530efd89-7155-42dc-b6ac-80f731115463"
+      "value": "fbd3a787-abfe-49fb-94f0-532af0164255"
     },
     {
       "key": "private_test_item_id",
-      "value": "964226f9-dd2b-4dec-b6c4-6a9a210fed0c"
+      "value": "61e61980-16dd-4ed8-bb33-8ac2ace83cd0"
     },
     {
       "key": "rejected_asset_request_id",
-      "value": "374d9baf-2807-4afe-a82e-6c34bba1ef9e"
+      "value": "5408ac33-0beb-4156-8482-9948f4b21d3c"
     },
     {
       "key": "acl_item_policy_id",
@@ -29365,27 +32191,27 @@
     },
     {
       "key": "acl_item_approve_id",
-      "value": "a22b6957-562d-4a58-9b59-e463460529c3"
+      "value": "ecb152dd-b64c-4270-a950-b1db3eb7daa0"
     },
     {
       "key": "acl_item_reject_id",
-      "value": "df440b5e-b200-4ca5-9ff2-947423e49884"
+      "value": "b7c6cf01-15ea-44cc-be72-e3ea07328a49"
     },
     {
       "key": "acl_item_withdraw_id",
-      "value": "c85d4bae-66cf-4695-bc7f-ac9216ea7538"
+      "value": "ec11d988-c0f5-486d-85e6-fa10d0bd7bf0"
     },
     {
       "key": "acl_request_id_approve",
-      "value": "10570f46-4561-4f51-bc7a-9014dbf04aba"
+      "value": "fd2fce6d-b97b-48f7-ad5b-145ef5186c40"
     },
     {
       "key": "acl_request_id_reject",
-      "value": "e0116371-b75f-4e68-8087-f41e5c52c9e4"
+      "value": "32a33957-45c2-4b49-b4a6-9bf098ce356a"
     },
     {
       "key": "acl_request_id_withdraw",
-      "value": "0967eb9b-b04b-425c-a6e0-9667ac23e7b7"
+      "value": "17b3eefd-dc3b-43df-b0ba-14857b75ebe8"
     },
     {
       "key": "acl_item_withdraw_id_1",
@@ -29393,19 +32219,19 @@
     },
     {
       "key": "acl_item_policy_id_1",
-      "value": "b786a56e-9cdc-4739-9220-f7b47ac0c5a1"
+      "value": "82ad5c5a-e609-40c0-9df8-cb7022b0eba6"
     },
     {
       "key": "acl_policy_id_deactivate",
-      "value": "88bf1e9f-2b2e-4245-afd1-c7e7e7011669"
+      "value": "0aa46220-42bc-47e1-8e41-cf50bf9a82e6"
     },
     {
       "key": "acl_item_deactivate_id",
-      "value": "d773f75b-733b-4868-b49e-1ef12dcc8494"
+      "value": "9623a232-efa3-4c6e-8726-d6a3e6a8a22b"
     },
     {
       "key": "acl_policy_id_approve",
-      "value": "8bdb2910-0930-4a46-a02d-42ef1b66178e"
+      "value": "807feaa7-4ff3-4fb7-bcb8-c2afc9d2fb6f"
     },
     {
       "key": "acl_policy_id_policy1_1",
@@ -29429,11 +32255,11 @@
     },
     {
       "key": "compute_request_id_a",
-      "value": "e6098704-e26d-4887-8827-718cb0141d72"
+      "value": "a5427551-4db9-4185-953b-9160c9b1e8d7"
     },
     {
       "key": "compute_request_id_b",
-      "value": "eeb696fc-b5f8-41b3-a526-6f2997669062"
+      "value": "11b98947-802b-4954-9e9f-9a22e6a83c5b"
     },
     {
       "key": "compute_request_id_c",
@@ -29449,7 +32275,7 @@
     },
     {
       "key": "delegation_id_3",
-      "value": "35bb140f-5814-4bca-9ffe-a86607665501"
+      "value": "22e5542d-2a4d-4d3a-91a4-3300fa049a6e"
     },
     {
       "key": "delegator_id_3",
@@ -29465,19 +32291,31 @@
     },
     {
       "key": "app_secret",
-      "value": "2b71cc4f33b477627b6a50b1501a9425204dea71"
+      "value": "f1b098b9f1f0d06c6426a6c2c5fc034aa37dac12"
     },
     {
       "key": "delegation2_constraint_id_appended",
-      "value": "f0376e24-caaf-4f9a-8ffc-2c1c7d130da4"
+      "value": "89097974-8c35-4a4f-90f5-187448cb107b"
     },
     {
       "key": "rs_id",
-      "value": "5890df3c-7919-4169-ba1e-dbd4de4e0208"
+      "value": "bf6f5e91-7fa1-4469-ac8b-b0445c495982"
     },
     {
       "key": "acl_policy_id_cleanup",
-      "value": "a62a5a72-0488-429b-98d1-ed4a4ad3134b"
+      "value": "7238a1ed-aefe-47d3-82a8-037e8f3745d5"
+    },
+    {
+      "key": "providerreq_token",
+      "value": "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICI5ajdoMFVkUENrNS1reDRPejhMNGtzeVRSV09vNEFZLUV2ZXhpYl9SRHFnIn0.eyJleHAiOjE3OTMzNDA1NzksImlhdCI6MTc5MzM0MDI3OSwianRpIjoib25ydHJvOjUwYzUxMDY0LTgxMDItNjlhYi0yOWQ0LWI2ZmJhYTI1YzM3YSIsImlzcyI6Imh0dHBzOi8vdjIuZGV2Lml1ZHguaW8vYXV0aC9yZWFsbXMvaXVkeC12MiIsImF1ZCI6ImFjY291bnQiLCJzdWIiOiJkNjZmZTcxNy03NTQxLTQ2NDMtOTE4Yy05NzYxYTlkZDIxZDAiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJmcm9udGVuZC1jbGllbnQiLCJzaWQiOiJkOTYxMzE1Mi1mZTg5LTQzYWMtODZkMi0xYzNkZGRkMmNiYWEiLCJhY3IiOiIxIiwiYWxsb3dlZC1vcmlnaW5zIjpbImh0dHA6Ly9sb2NhbGhvc3Q6NDAwNyIsIioiLCJodHRwOi8vbG9jYWxob3N0OjMwMDAiLCJodHRwczovL2l1ZHhxYS1kZXYuc2xpY2VhcnJvdy5jb20iXSwicmVhbG1fYWNjZXNzIjp7InJvbGVzIjpbInByb3ZpZGVyIiwib2ZmbGluZV9hY2Nlc3MiLCJkZWZhdWx0LXJvbGVzLXRnZGV4LXBpbG90IiwiY29uc3VtZXIiXX0sInJlc291cmNlX2FjY2VzcyI6eyJhY2NvdW50Ijp7InJvbGVzIjpbIm1hbmFnZS1hY2NvdW50IiwibWFuYWdlLWFjY291bnQtbGlua3MiLCJ2aWV3LXByb2ZpbGUiXX19LCJzY29wZSI6InByb2ZpbGUgZW1haWwiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwibmFtZSI6IlN1ZGVlcCBQcm92aWRlclJlcSIsImVtYWlsIjoic3VkZWVwK3Byb3ZpZGVycmVxQHNpcnBpLmlvIn0.l4IitiDV0U2bWRqNYyVDqvoEcfuAdlSpsw4BB6qrZRkNh7lwoReJoCvfNXndvI7bZlQCd0N1iE-TewWiau8yt3gl9YDP87jcuisNmPECcnkZKJ4cSTs85y2nGu_1O95-fIQl1gBq_2Qh4_1WJ3a2ILqY4qeaYiL-5Npb-8NBrYVDA6ccTrSyPX8siicSUzoOUikcvpXNdnRSJWvyG9oPLsvhqyoa9crrFEv7Yb1KaUd4n0mBA-SDU49_iFxqkz4Jpx3pRWPISJSUEbHFL4rxaCAexcH4now3hLqgXw4p0cl2yamywfo6VLIl8_bkXI-AnLRhXLibsHw0JxUrvWHBnw"
+    },
+    {
+      "key": "providerreq_user_id",
+      "value": "d66fe717-7541-4643-918c-9761a9dd21d0"
+    },
+    {
+      "key": "providerreq_request_id",
+      "value": "38831baf-bff9-4644-9a5f-4b3aa1c4e0f9"
     }
   ]
 }

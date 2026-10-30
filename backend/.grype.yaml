@@ -1,0 +1,11 @@
+ignore:
+  # @faker-js/faker 5.5.3 comes in through newman (postman-collection). It
+  # cannot be upgraded without breaking the Postman runs, so the finding is
+  # accepted for this package only. Remove this once newman ships a fixed faker.
+  # Grype reports it under either ID depending on the source, so both are listed.
+  - vulnerability: CVE-2026-73231
+    package:
+      name: "@faker-js/faker"
+  - vulnerability: GHSA-qxc2-j82w-r537
+    package:
+      name: "@faker-js/faker"

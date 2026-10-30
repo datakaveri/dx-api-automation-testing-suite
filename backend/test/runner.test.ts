@@ -4,7 +4,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { after, before, describe, it } from "node:test";
 import { generateNewmanHtmlReport } from "../src/reportGenerator";
-import { normaliseResult, runNewman } from "../src/runner";
+import { normaliseResult, resolveEnvRefs, runNewman } from "../src/runner";
 import type { CollectionDescriptor, CollectionState, RunResult } from "../src/types";
 
 // A real Newman run against a local server, so the normalised result is checked
@@ -200,5 +200,31 @@ describe("generateNewmanHtmlReport", () => {
     assert.match(report, /Skipped Tests <span class="badge badge-light">1<\/span>/);
     assert.ok(report.includes("Skipped Request 200"));
     assert.ok(!report.includes("There are no skipped tests"));
+  });
+});
+
+describe("resolveEnvRefs", () => {
+  const env = { SECRET: "s3cret", EMPTY: "" };
+
+  it("resolves ${VAR} and ${VAR:-fallback} in place and returns the resolved values", () => {
+    const values = [
+      { key: "pass", value: "${SECRET}" },
+      { key: "mixed", value: "user:${SECRET}" },
+      { key: "fallback", value: "${MISSING:-dflt}" },
+      { key: "empty", value: "${EMPTY}" },
+      { key: "plain", value: "untouched" },
+      { key: "scriptFn", value: "const url = `${baseUrl}/token`;" },
+    ];
+    assert.deepEqual(resolveEnvRefs(values, env), ["s3cret", "user:s3cret", "dflt"]);
+    assert.deepEqual(values.map((v) => v.value), ["s3cret", "user:s3cret", "dflt", "", "untouched", "const url = `${baseUrl}/token`;"]);
+  });
+
+  it("refuses to run with an unset variable and names it", () => {
+    assert.throws(() => resolveEnvRefs([{ key: "pass", value: "${NOPE}" }], env), /NOPE is not set \(needed by "pass"\)/);
+  });
+
+  it("ignores a missing or malformed list", () => {
+    assert.deepEqual(resolveEnvRefs(undefined, env), []);
+    assert.deepEqual(resolveEnvRefs([null, { key: "n", value: 1 }], env), []);
   });
 });

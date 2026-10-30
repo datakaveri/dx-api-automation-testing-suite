@@ -1,0 +1,181 @@
+# Secret-scanning rules used by the git hooks (.githooks/) and CI
+# (.github/workflows/secret-scan.yml).
+#
+# The default gitleaks rules missed most of what leaked into this repo's
+# history: Postman key/value pairs, JSON configs, escaped and HTML-escaped
+# request bodies, INI/env files and user:pass@ URLs. The rules below cover
+# those shapes plus plain assignments in code. ${ENV} and {{postman}}
+# references are allowed; every allowlist matches the WHOLE value, so a
+# reference with a literal glued on ("${X}hunter2", "${X:-hunter2}") is caught.
+#
+# Proof suite: every rule here has block/allow cases in the red-team corpus.
+title = "iudxqa"
+
+[extend]
+useDefault = true
+
+# --- Postman -----------------------------------------------------------------
+
+[[rules]]
+id = "postman-variable-secret"
+description = "Postman variable/header/auth/urlencoded entry with a secret-looking key and a literal value"
+regex = '''"key"\s*:\s*"[^"]*(?i:pass|pwd|secret|token|api[_-]?key|credential|authorization)[^"]*"\s*,(?:\s*"(?:type|description|enabled|disabled|id|uuid|src|system)"\s*:\s*(?:"[^"]*"|true|false|null)\s*,)*\s*"value"\s*:\s*"([^"]{4,})"'''
+secretGroup = 1
+keywords = ["pass", "pwd", "secret", "token", "key", "credential", "authorization"]
+
+[[rules.allowlists]]
+description = "Keys that hold a URL, script, name, id or type"
+regexTarget = "match"
+regexes = ['''(?i)"key"\s*:\s*"[^"]*(url|uri|fn|name|id|type|expiry|expires|header|base|path|endpoint|realm|scope)"''']
+
+[[rules]]
+id = "postman-variable-secret-value-first"
+description = "Same as postman-variable-secret with \"value\" written before \"key\""
+regex = '''"value"\s*:\s*"([^"]{4,})"\s*,(?:\s*"(?:type|description|enabled|disabled|id|uuid|src|system)"\s*:\s*(?:"[^"]*"|true|false|null)\s*,)*\s*"key"\s*:\s*"[^"]*(?i:pass|pwd|secret|token|api[_-]?key|credential|authorization)[^"]*"'''
+secretGroup = 1
+keywords = ["pass", "pwd", "secret", "token", "key", "credential", "authorization"]
+
+[[rules.allowlists]]
+description = "Keys that hold a URL, script, name, id or type"
+regexTarget = "match"
+regexes = ['''(?i)"key"\s*:\s*"[^"]*(url|uri|fn|name|id|type|expiry|expires|header|base|path|endpoint|realm|scope)"$''']
+
+[[rules]]
+id = "postman-script-set-secret"
+description = "pm.environment/collectionVariables/globals.set() of a secret-looking name to a literal"
+regex = '''pm\.(?:environment|collectionVariables|globals|variables)\.set\(\s*\\?["'][^"'\\]*(?i:pass|pwd|secret|token|api[_-]?key|credential)[^"'\\]*\\?["']\s*,\s*\\?["']([^"'\\]{4,})\\?["']'''
+secretGroup = 1
+keywords = [".set("]
+
+# --- JSON (plain, escaped inside a JSON string, HTML-escaped in reports) -----
+
+[[rules]]
+id = "json-secret-field"
+description = "JSON field with a secret-looking name and a literal value"
+regex = '''"(?i:[a-z0-9_.-]*(?:pass|pwd|secret|token|api[_-]?key|apikey|private[_-]?key|credential|authorization)[a-z0-9_.-]*)"\s*:\s*"([^"]{4,})"'''
+secretGroup = 1
+keywords = ["pass", "pwd", "secret", "token", "key", "credential", "authorization"]
+
+[[rules.allowlists]]
+description = "Translation files: \"password\": \"Enter your password\" is a label"
+paths = ['''(?i)(^|/)(i18n|locales?|lang|translations?)/''']
+
+[[rules]]
+id = "escaped-json-secret-field"
+description = "Secret-looking field inside an escaped raw request body"
+regex = '''\\"(?i:[a-z0-9_.-]*(?:pass|pwd|secret|token|api[_-]?key|apikey|private[_-]?key|credential|authorization)[a-z0-9_.-]*)\\"\s*:\s*\\"([^\\"]{4,})\\"'''
+secretGroup = 1
+keywords = ["pass", "pwd", "secret", "token", "key", "credential", "authorization"]
+
+[[rules]]
+id = "html-escaped-json-secret-field"
+description = "Secret-looking field in HTML-escaped JSON (Newman/HTML run reports)"
+regex = '''&quot;(?i:[a-z0-9_.-]*(?:pass|pwd|secret|token|api[_-]?key|apikey|accesskey|private[_-]?key|credential|authorization)[a-z0-9_.-]*)&quot;\s*:\s*&quot;(.{4,}?)&quot;'''
+secretGroup = 1
+keywords = ["&quot;"]
+
+# --- Config files: INI, env, YAML, TOML, shell, Dockerfile, Terraform -------
+
+[[rules]]
+id = "config-assignment-secret"
+description = "password/secret/token assignment in a config, env, shell or Docker file"
+regex = '''(?im)^[ \t]*(?:-[ \t]*)?(?:(?:export|env|arg|set)[ \t]+)?[a-z0-9_.-]*(?:pass|pwd|secret|token|api[_-]?key|apikey|private[_-]?key|credentials?)[a-z0-9_.-]*(?:[ \t]*[:=][ \t]*|[ \t]+)(?:"([^"\r\n]{4,})"|'([^'\r\n]{4,})'|([^\s"'][^\s]{3,}))'''
+path = '''(?i)(\.(ini|cfg|cnf|conf|properties|toml|ya?ml|sh|bash|zsh|ps1|bat|cmd|tf|tfvars|hcl)$|(^|/)(\.env[^/]*|[^/]*\.env|dockerfile[^/]*|containerfile[^/]*|\.npmrc|\.pypirc|\.yarnrc[^/]*)$)'''
+keywords = ["pass", "pwd", "secret", "token", "key", "credential"]
+
+[[rules.allowlists]]
+description = "Keys naming a file, URL, name, id, type or policy hold no secret"
+regexTarget = "match"
+regexes = ['''(?im)^[ \t]*(?:-[ \t]*)?(?:(?:export|env|arg|set)[ \t]+)?[a-z0-9_.-]*[_.-](file|path|url|uri|dir|name|id|type|endpoint|realm|header|length|policy|mode|ttl|expiry|expires|timeout|enabled|scope|label)(?:[ \t]*[:=]|[ \t]+)''']
+
+[[rules]]
+id = "netrc-password"
+description = ".netrc password"
+regex = '''(?i)\bpassword[ \t]+(\S{4,})'''
+path = '''(?i)(^|/)[._]netrc$'''
+keywords = ["password"]
+
+[[rules]]
+id = "xml-secret-element"
+description = "<password>/<secret>/<token> XML element with a literal value"
+regex = '''<(?i:[a-z0-9_.-]*(?:password|passwd|pwd|secret|token|api[_-]?key))>([^<\s]{4,})</'''
+keywords = ["pass", "pwd", "secret", "token", "key"]
+
+# --- Code ----------------------------------------------------------------------
+
+[[rules]]
+id = "code-assignment-secret"
+description = "Literal assigned to a secret-looking name in source code"
+regex = '''(?i)\b[a-z0-9_]*(?:pass|pwd|secret|token|api[_-]?key|apikey|private[_-]?key|credentials?)[a-z0-9_]*["']?\s*(?:=|:|:=|=>)\s*["'`]([^"'`\s$]{4,})["'`]'''
+path = '''(?i)\.(ts|tsx|js|jsx|mjs|cjs|vue|svelte|py|java|kt|kts|go|rb|php|cs|swift|dart|rs|scala|groovy)$'''
+keywords = ["pass", "pwd", "secret", "token", "key", "credential"]
+
+[[rules.allowlists]]
+description = "Names that hold a label, header name, field name, id, type or route"
+regexTarget = "match"
+regexes = ['''(?i)(name|id|type|label|field|header|param|path|url|uri|file|dir|placeholder|hint|selector|ref|env|var|prefix|length|len|count|regex|pattern|endpoint|route|event|column|table|cookie|message|msg|error|policy|mode|scope|realm|title|text|description)["']?\s*(?:=|:|:=|=>)\s*["'`]''']
+
+[[rules.allowlists]]
+description = "Test fixtures use throwaway values"
+paths = ['''(?i)(^|/)(test|tests|__tests__|spec|__mocks__|fixtures?)/|\.(test|spec)\.[a-z]+$''']
+
+# --- URLs ------------------------------------------------------------------------
+
+[[rules]]
+id = "url-embedded-credentials"
+description = "Credentials embedded in a URL (amqp://, postgres://, redis://:pass@, https://user:pass@)"
+regex = '''[a-z][a-z0-9+.-]*://[^:/@\s"'{}$<>]*:([^@\s"'{}$<>/]{3,})@[a-z0-9.-]+'''
+secretGroup = 1
+keywords = ["://"]
+
+[[rules.allowlists]]
+description = "Throwaway databases on this machine (exact host, not localhost.example.com)"
+regexTarget = "match"
+regexes = ['''@(localhost|127\.0\.0\.1)$''']
+
+[[rules]]
+id = "url-query-secret"
+description = "Secret passed as a URL query parameter"
+regex = '''[?&](?i:password|passwd|pwd|pass|client_secret|secret|api[_-]?key|apikey|access_token|token)=([^&\s"'#{}<>\\]{4,})'''
+secretGroup = 1
+keywords = ["pass", "pwd", "secret", "key", "token"]
+
+[[rules.allowlists]]
+description = "Test fixtures use throwaway values"
+paths = ['''(?i)(^|/)(test|tests|__tests__|spec|__mocks__|fixtures?)/|\.(test|spec)\.[a-z]+$''']
+
+# --- Allowlists (whole-value matches only) ---------------------------------------
+
+[[allowlists]]
+description = "References, placeholders and non-secret words"
+regexes = [
+  '''^\$\{[A-Za-z_][A-Za-z0-9_]*(:-)?\}$''',                     # ${ENV_VAR}, ${TOKEN:-}
+  '''^\$\{\{[^{}]*\}\}$''',                                       # ${{ secrets.X }}
+  '''^\{\{\$?[A-Za-z0-9_.-]+\}\}$''',                             # {{var}}, {{$randomPassword}}
+  '''^(?i:bearer|basic|token)\s*(\{\{\$?[A-Za-z0-9_.-]+\}\}(:\{\{\$?[A-Za-z0-9_.-]+\}\})?|\$\{[A-Za-z_][A-Za-z0-9_]*\})?\s*$''',  # "Bearer{{t}}", "Basic {{id}}:{{secret}}", "Bearer " + var
+  '''^<[^<>]*>$''',                                               # <password>
+  '''^(\*+|x+|X+|\.+)$''',
+  '''(?i)^(changeme|change_me|placeholder|example|\[?redacted\]?|masked|true|false|null|none|nil|undefined|string|number|required|optional|inherit|password|passwd|secret|token|empty)$''',
+  '''(?i)^your[_-][a-z0-9_-]+$''',                                # your-app-password
+]
+
+[[allowlists]]
+description = "Keys that only look like pass*: passed, passes, passing, passive, passport, passage"
+regexTarget = "match"
+regexes = ['''(?i)^[ \t]*(?:-[ \t]*)?(?:(?:export|env|arg|set)[ \t]+)?(?:"key"\s*:\s*"|\\?"|&quot;)?[a-z0-9_.-]*pass(?:ed|es|ing|ive|port|age)''']
+
+[[allowlists]]
+description = "JSON keys that end in a label/type/url word hold no secret (password_hint, secret_name, tokenUrl)"
+targetRules = ["json-secret-field", "escaped-json-secret-field", "html-escaped-json-secret-field"]
+regexTarget = "match"
+regexes = ['''(?i)^(?:\\?"|&quot;)[a-z0-9_.-]*(name|id|type|url|uri|path|file|dir|hint|label|policy|mode|ttl|expiry|expires|expires_in|timeout|enabled|scope|realm|header|length|endpoint|placeholder|title|text|description|message|error|count|rate|field|format|status)(?:\\?"|&quot;)\s*:''']
+
+[[allowlists]]
+description = "URLs without credentials and absolute paths (kc_token: /realms/...)"
+targetRules = ["postman-variable-secret", "postman-variable-secret-value-first", "json-secret-field", "config-assignment-secret", "code-assignment-secret"]
+regexes = ['''^https?://[^@\s]*$''', '''^/[^\s]*$''']
+
+[[allowlists]]
+description = "snake_case variable names (acl_item_withdraw_id_1) picked up as values"
+targetRules = ["generic-api-key"]
+regexes = ['''^[a-z][a-z0-9]*(_[a-z0-9]+){2,}$''']

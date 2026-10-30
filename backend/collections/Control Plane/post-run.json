@@ -1,11 +1,16 @@
 {
   "export": {
-    "org_create_req_id": "environment.org_create_req_id"
+    "org_create_req_id": "environment.org_create_req_id",
+    "databank_item_id": "collection.databank_item_id",
+    "private_test_item_id": "collection.private_test_item_id",
+    "feedback_test_item_id": "collection.feedback_test_item_id",
+    "acl_item_approve_id": "collection.acl_item_approve_id",
+    "acl_item_reject_id": "collection.acl_item_reject_id",
+    "acl_item_withdraw_id": "collection.acl_item_withdraw_id",
+    "acl_item_policy_id_1": "collection.acl_item_policy_id_1",
+    "acl_item_deactivate_id": "collection.acl_item_deactivate_id",
+    "provider_user_id_1": "collection.provider_user_id_1"
   },
-  "ignoreFiles": [
-    "organisation_deletion_config.json",
-    "compute_credit_cleanup_config.json"
-  ],
   "python": {
     "requirements": "requirements.txt"
   },
@@ -14,7 +19,7 @@
       "name": "Delete created organisation",
       "command": "python",
       "args": [
-        "organisation_deletion.py",
+        "../../automation-scripts/CONTROLPLANE_Cleanup_Script/organisation_deletion/organisation_deletion.py",
         "--request-id",
         "{{env.org_create_req_id}}"
       ]
@@ -23,9 +28,51 @@
       "name": "Clean up compute data",
       "command": "python",
       "args": [
-        "compute_credit_cleanup.py",
+        "../../automation-scripts/CONTROLPLANE_Cleanup_Script/compute_credit_cleanup/compute_credit_cleanup.py",
         "--password",
         "{{env.consumer_pass}}"
+      ]
+    },
+    {
+      "name": "Clean up platform provider data",
+      "command": "python",
+      "args": [
+        "../../automation-scripts/CONTROLPLANE_Cleanup_Script/platform_provider_cleanup/platform_provider_cleanup.py"
+      ]
+    },
+    {
+      "name": "Clean up ngsl data",
+      "command": "python",
+      "args": [
+        "../../automation-scripts/NGSILD_Automation_Script/ngsild_delete_v1.py",
+        "--config",
+        "../../automation-scripts/NGSILD_Automation_Script/config.ini",
+        "--exchange",
+        "{{databank_item_id}}",
+        "--exchange",
+        "{{private_test_item_id}}",
+        "--exchange",
+        "{{feedback_test_item_id}}",
+        "--exchange",
+        "{{acl_item_approve_id}}",
+        "--exchange",
+        "{{acl_item_reject_id}}",
+        "--exchange",
+        "{{acl_item_withdraw_id}}",
+        "--exchange",
+        "{{acl_item_policy_id_1}}",
+        "--exchange",
+        "{{acl_item_deactivate_id}}",
+        "--delete-user",
+        "{{provider_user_id_1}}"
+      ]
+    },
+    {
+      "name": "Clean up gateway queue and user",
+      "command": "python",
+      "enabledBy": "RUN_GATEWAY_CLEANUP",
+      "args": [
+        "../../automation-scripts/GATEWAY_Automation_Script/delete_rmq.py"
       ]
     }
   ]

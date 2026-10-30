@@ -21,5 +21,5 @@ export function formatISTTime(date: Date): string {
     minute: "2-digit",
     second: "2-digit",
     hour12: true
-  }).replace(/\u202f/g, " ");
+  }).replaceAll("\u202f", " ");
 }

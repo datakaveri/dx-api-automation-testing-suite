@@ -2,7 +2,19 @@ node_modules
 dist
 .git
 .github
-.env
 *.log
 .post-run-venvs
-/data/control-plane-password.json
+
+# Secrets never go into the image: the container gets them from
+# `docker run --env-file .env`. Every .env variant (.env.local, backups) and
+# key file is excluded, not only .env itself.
+.env*
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Runtime state and run reports: data/ is mounted as a volume at run time.
+/data/
+*report*.html
+newman/

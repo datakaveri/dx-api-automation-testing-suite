@@ -1,10 +1,20 @@
 import type { Request, Response } from "express";
+import { z } from "zod";
 import type { Catalog } from "../catalog";
 import { generateNewmanHtmlReport } from "../reportGenerator";
 import { RunError, RunManager } from "../runner";
 import type { ResultsStorePort } from "../store";
-import { endpointRunQuerySchema, selectedRunRequestSchema } from "../validation";
-import type { CollectionDescriptor, CollectionHistoryResponse, CollectionLatestRunResponse, CollectionSummary, RunStats } from "../types";
+import {
+  endpointRunQuerySchema,
+  selectedRunRequestSchema,
+} from "../validation";
+import type {
+  CollectionDescriptor,
+  CollectionHistoryResponse,
+  CollectionLatestRunResponse,
+  CollectionSummary,
+  RunStats,
+} from "../types";
 
 type CatalogLoader = () => Promise<Catalog>;
 type CollectionParams = { id: string };
@@ -16,10 +26,12 @@ export class CollectionController {
     private readonly loadCatalog: CatalogLoader,
     private readonly store: ResultsStorePort,
     private readonly runner: RunManager,
-    private readonly dashboardUrl: string
+    private readonly dashboardUrl: string,
   ) {}
 
-  private summaryForCollection(collection: CollectionDescriptor): CollectionSummary {
+  private summaryForCollection(
+    collection: CollectionDescriptor,
+  ): CollectionSummary {
     const state = this.store.get(collection.id);
     return {
       id: collection.id,
@@ -35,18 +47,27 @@ export class CollectionController {
       runId: state.runId ?? null,
       lastRunAt: state.lastRunAt,
       durationMs: state.durationMs,
-      stats: state.stats
+      stats: state.stats,
     };
   }
 
   private zeroStats(): RunStats {
-    return { requests: { total: 0, failed: 0 }, assertions: { total: 0, failed: 0 }, tests: { total: 0, failed: 0 }, averageResponseTimeMs: 0 };
+    return {
+      requests: { total: 0, failed: 0 },
+      assertions: { total: 0, failed: 0 },
+      tests: { total: 0, failed: 0 },
+      averageResponseTimeMs: 0,
+    };
   }
 
   async list(_request: Request, response: Response): Promise<void> {
     await this.store.reload();
     const catalog = await this.loadCatalog();
-    response.json(catalog.collections.map((collection) => this.summaryForCollection(collection)));
+    response.json(
+      catalog.collections.map((collection) =>
+        this.summaryForCollection(collection),
+      ),
+    );
   }
 
   async skipped(_request: Request, response: Response): Promise<void> {
@@ -55,45 +76,78 @@ export class CollectionController {
 
   async summary(_request: Request, response: Response): Promise<void> {
     await this.store.reload();
-    const collections = (await this.loadCatalog()).collections.map((collection) => this.summaryForCollection(collection));
+    const collections = (await this.loadCatalog()).collections.map(
+      (collection) => this.summaryForCollection(collection),
+    );
     const totals = collections.reduce(
       (aggregate, collection) => {
         const stats = collection.stats ?? this.zeroStats();
         aggregate.totalRequests += stats.requests.total;
         aggregate.failedAssertions += stats.assertions.failed;
-        aggregate.responseTimeTotal += stats.averageResponseTimeMs * stats.requests.total;
+        aggregate.responseTimeTotal +=
+          stats.averageResponseTimeMs * stats.requests.total;
         aggregate.responseTimeCount += stats.requests.total;
         aggregate[collection.status] += 1;
         return aggregate;
       },
-      { totalRequests: 0, failedAssertions: 0, responseTimeTotal: 0, responseTimeCount: 0, idle: 0, running: 0, passed: 0, failed: 0, error: 0 }
+      {
+        totalRequests: 0,
+        failedAssertions: 0,
+        responseTimeTotal: 0,
+        responseTimeCount: 0,
+        idle: 0,
+        running: 0,
+        passed: 0,
+        failed: 0,
+        error: 0,
+      },
     );
     response.json({
       totalCollections: collections.length,
       passed: totals.passed,
       failed: totals.failed,
       running: totals.running,
-      totalApis: collections.reduce((total, collection) => total + collection.requestCount, 0),
+      totalApis: collections.reduce(
+        (total, collection) => total + collection.requestCount,
+        0,
+      ),
       totalRequests: totals.totalRequests,
       failedAssertions: totals.failedAssertions,
-      averageResponseTimeMs: totals.responseTimeCount ? Math.round(totals.responseTimeTotal / totals.responseTimeCount) : 0
+      averageResponseTimeMs: totals.responseTimeCount
+        ? Math.round(totals.responseTimeTotal / totals.responseTimeCount)
+        : 0,
     });
   }
 
   async getDashboardData(collectionIds: string[] | null = null) {
     await this.store.reload();
     const collections = (await this.loadCatalog()).collections
-      .filter((collection) => collectionIds === null || collectionIds.includes(collection.id))
+      .filter(
+        (collection) =>
+          collectionIds === null || collectionIds.includes(collection.id),
+      )
       .map((collection) => this.summaryForCollection(collection));
-    const failedCollections = collections.filter((collection) => collection.status === "failed" || collection.status === "error");
+    const failedCollections = collections.filter(
+      (collection) =>
+        collection.status === "failed" || collection.status === "error",
+    );
 
     return {
       kpis: {
         totalCollections: collections.length,
-        passedCollections: collections.filter((collection) => collection.status === "passed").length,
+        passedCollections: collections.filter(
+          (collection) => collection.status === "passed",
+        ).length,
         failedCollections: failedCollections.length,
-        totalApis: collections.reduce((total, collection) => total + collection.requestCount, 0),
-        failedAssertions: collections.reduce((total, collection) => total + (collection.stats?.assertions.failed ?? 0), 0)
+        totalApis: collections.reduce(
+          (total, collection) => total + collection.requestCount,
+          0,
+        ),
+        failedAssertions: collections.reduce(
+          (total, collection) =>
+            total + (collection.stats?.assertions.failed ?? 0),
+          0,
+        ),
       },
       collections: collections.map((collection) => ({
         id: collection.id,
@@ -104,62 +158,101 @@ export class CollectionController {
         runId: collection.runId,
         apiCount: collection.requestCount,
         assertions: {
-          passed: (collection.stats?.assertions.total ?? 0) - (collection.stats?.assertions.failed ?? 0),
+          passed:
+            (collection.stats?.assertions.total ?? 0) -
+            (collection.stats?.assertions.failed ?? 0),
           failed: collection.stats?.assertions.failed ?? 0,
-          total: collection.stats?.assertions.total ?? 0
+          total: collection.stats?.assertions.total ?? 0,
         },
         // Executed requests from the last run; requests that never ran are not counted as passed.
         tests: {
-          passed: Math.max(0, (collection.stats?.tests.total ?? 0) - (collection.stats?.tests.failed ?? 0)),
-          failed: collection.stats?.tests.failed ?? 0,
-          total: collection.stats?.tests.total ?? 0
+          passed: Math.max(
+            0,
+            (collection.stats?.tests?.total ?? 0) -
+              (collection.stats?.tests?.failed ?? 0),
+          ),
+          failed: collection.stats?.tests?.failed ?? 0,
+          total: collection.stats?.tests?.total ?? 0,
         },
         lastRunAt: collection.lastRunAt,
         durationMs: collection.durationMs,
-        actions: { canRerun: true, canViewHistory: true }
-      }))
+        actions: { canRerun: true, canViewHistory: true },
+      })),
     };
   }
 
   async dashboard(_request: Request, response: Response): Promise<void> {
-    response.json({ data: await this.getDashboardData(), meta: { generatedAt: new Date().toISOString() } });
+    response.json({
+      data: await this.getDashboardData(),
+      meta: { generatedAt: new Date().toISOString() },
+    });
   }
 
-  async result(request: Request<CollectionParams>, response: Response): Promise<void> {
+  async result(
+    request: Request<CollectionParams>,
+    response: Response,
+  ): Promise<void> {
     await this.store.reload();
     const catalog = await this.loadCatalog();
-    if (!catalog.collections.some((collection) => collection.id === request.params.id)) {
-      response.status(404).json({ error: { code: "COLLECTION_NOT_FOUND", message: "Collection not found." } });
+    if (
+      !catalog.collections.some(
+        (collection) => collection.id === request.params.id,
+      )
+    ) {
+      response
+        .status(404)
+        .json({
+          error: {
+            code: "COLLECTION_NOT_FOUND",
+            message: "Collection not found.",
+          },
+        });
       return;
     }
     response.json({ result: this.store.get(request.params.id).result });
   }
 
-  async latestRun(request: Request<CollectionParams>, response: Response): Promise<void> {
+  async latestRun(
+    request: Request<CollectionParams>,
+    response: Response,
+  ): Promise<void> {
     const query = endpointRunQuerySchema.safeParse(request.query);
     if (!query.success) {
       response.status(400).json({
         error: {
           code: "VALIDATION_ERROR",
           message: "Invalid endpoint filters.",
-          details: query.error.flatten()
-        }
+          details: z.flattenError(query.error),
+        },
       });
       return;
     }
 
     await this.store.reload();
     const catalog = await this.loadCatalog();
-    const descriptor = catalog.collections.find((collection) => collection.id === request.params.id);
+    const descriptor = catalog.collections.find(
+      (collection) => collection.id === request.params.id,
+    );
     if (!descriptor) {
-      response.status(404).json({ error: { code: "COLLECTION_NOT_FOUND", message: "Collection not found." } });
+      response
+        .status(404)
+        .json({
+          error: {
+            code: "COLLECTION_NOT_FOUND",
+            message: "Collection not found.",
+          },
+        });
       return;
     }
 
     const state = this.store.get(request.params.id);
     const run = state.history?.[0];
     if (!run) {
-      response.status(404).json({ error: { code: "RUN_NOT_FOUND", message: "No completed run found." } });
+      response
+        .status(404)
+        .json({
+          error: { code: "RUN_NOT_FOUND", message: "No completed run found." },
+        });
       return;
     }
 
@@ -170,10 +263,13 @@ export class CollectionController {
       const status = execution.failed ? "failed" : "passed";
       const method = execution.method.toUpperCase();
       const folder = execution.folder ?? "Root Requests";
-      return (!normalizedSearch || execution.name.toLowerCase().includes(normalizedSearch))
-        && (query.data.status === "all" || query.data.status === status)
-        && (query.data.method === "all" || query.data.method === method)
-        && (normalizedFolder === "all" || normalizedFolder === folder);
+      return (
+        (!normalizedSearch ||
+          execution.name.toLowerCase().includes(normalizedSearch)) &&
+        (query.data.status === "all" || query.data.status === status) &&
+        (query.data.method === "all" || query.data.method === method) &&
+        (normalizedFolder === "all" || normalizedFolder === folder)
+      );
     });
 
     const folderCounts = new Map<string, number>();
@@ -183,26 +279,30 @@ export class CollectionController {
     }
 
     const start = (query.data.page - 1) * query.data.pageSize;
-    const endpoints = filteredExecutions.slice(start, start + query.data.pageSize).map((execution) => {
-      const totalAssertions = execution.assertions.length;
-      const failedAssertions = execution.assertions.filter((assertion) => !assertion.passed).length;
-      return {
-        name: execution.name,
-        method: execution.method.toUpperCase(),
-        status: execution.failed ? "failed" as const : "passed" as const,
-        statusCode: execution.statusCode,
-        folder: execution.folder ?? "Root Requests",
-        endpoint: execution.url,
-        latencyMs: execution.responseTimeMs,
-        payloadBytes: execution.responseSize,
-        assertions: {
-          passed: totalAssertions - failedAssertions,
-          failed: failedAssertions,
-          total: totalAssertions
-        },
-        verifiedAssertions: execution.assertions
-      };
-    });
+    const endpoints = filteredExecutions
+      .slice(start, start + query.data.pageSize)
+      .map((execution) => {
+        const totalAssertions = execution.assertions.length;
+        const failedAssertions = execution.assertions.filter(
+          (assertion) => !assertion.passed,
+        ).length;
+        return {
+          name: execution.name,
+          method: execution.method.toUpperCase(),
+          status: execution.failed ? ("failed" as const) : ("passed" as const),
+          statusCode: execution.statusCode,
+          folder: execution.folder ?? "Root Requests",
+          endpoint: execution.url,
+          latencyMs: execution.responseTimeMs,
+          payloadBytes: execution.responseSize,
+          assertions: {
+            passed: totalAssertions - failedAssertions,
+            failed: failedAssertions,
+            total: totalAssertions,
+          },
+          verifiedAssertions: execution.assertions,
+        };
+      });
 
     const body: CollectionLatestRunResponse = {
       data: {
@@ -212,45 +312,60 @@ export class CollectionController {
           status: run.status,
           completedAt: run.completedAt,
           durationMs: run.durationMs,
-          reportUrl: `/api/collections/${encodeURIComponent(descriptor.id)}/history/${encodeURIComponent(run.runId)}/report`
+          reportUrl: `/api/collections/${encodeURIComponent(descriptor.id)}/history/${encodeURIComponent(run.runId)}/report`,
         },
         kpis: {
           totalEndpoints: run.stats.requests.total,
           passedRequests: run.stats.requests.total - run.stats.requests.failed,
           failedRequests: run.stats.requests.failed,
-          avgResponseTimeMs: run.stats.averageResponseTimeMs
+          avgResponseTimeMs: run.stats.averageResponseTimeMs,
         },
         folders: [...folderCounts.entries()]
           .map(([name, endpointCount]) => ({ name, endpointCount }))
           .sort((a, b) => a.name.localeCompare(b.name)),
-        endpoints
+        endpoints,
       },
       meta: {
         filters: {
           search: query.data.search,
           status: query.data.status,
           method: query.data.method,
-          folder: query.data.folder
+          folder: query.data.folder,
         },
         totalItems: filteredExecutions.length,
         page: query.data.page,
-        pageSize: query.data.pageSize
-      }
+        pageSize: query.data.pageSize,
+      },
     };
 
     response.json(body);
   }
 
-  async history(request: Request<CollectionParams>, response: Response): Promise<void> {
+  async history(
+    request: Request<CollectionParams>,
+    response: Response,
+  ): Promise<void> {
     await this.store.reload();
     const catalog = await this.loadCatalog();
-    const descriptor = catalog.collections.find((collection) => collection.id === request.params.id);
+    const descriptor = catalog.collections.find(
+      (collection) => collection.id === request.params.id,
+    );
     if (!descriptor) {
-      response.status(404).json({ error: { code: "COLLECTION_NOT_FOUND", message: "Collection not found." } });
+      response
+        .status(404)
+        .json({
+          error: {
+            code: "COLLECTION_NOT_FOUND",
+            message: "Collection not found.",
+          },
+        });
       return;
     }
 
-    const history = (this.store.get(request.params.id).history ?? []).slice(0, 5);
+    const history = (this.store.get(request.params.id).history ?? []).slice(
+      0,
+      5,
+    );
     const body: CollectionHistoryResponse = {
       data: {
         collection: { id: descriptor.id, folderName: descriptor.folderName },
@@ -268,43 +383,62 @@ export class CollectionController {
             assertions: {
               passed: Math.max(0, totalAssertions - failedAssertions),
               failed: failedAssertions,
-              total: totalAssertions
+              total: totalAssertions,
             },
             avgLatencyMs: run.stats.averageResponseTimeMs,
-            reportUrl: `/api/collections/${encodeURIComponent(descriptor.id)}/history/${encodeURIComponent(run.runId)}/report`
+            reportUrl: `/api/collections/${encodeURIComponent(descriptor.id)}/history/${encodeURIComponent(run.runId)}/report`,
           };
-        })
+        }),
       },
-      meta: { limit: 5, count: history.length }
+      meta: { limit: 5, count: history.length },
     };
 
     response.json(body);
   }
 
-  async historyReport(request: Request<HistoryReportParams>, response: Response): Promise<void> {
+  async historyReport(
+    request: Request<HistoryReportParams>,
+    response: Response,
+  ): Promise<void> {
     await this.store.reload();
     const catalog = await this.loadCatalog();
-    const descriptor = catalog.collections.find((collection) => collection.id === request.params.id);
+    const descriptor = catalog.collections.find(
+      (collection) => collection.id === request.params.id,
+    );
     if (!descriptor) {
       response.status(404).send("Collection not found.");
       return;
     }
     const state = this.store.get(request.params.id);
-    const run = (state.history ?? []).find((history) => history.runId === request.params.runId);
+    const run = (state.history ?? []).find(
+      (history) => history.runId === request.params.runId,
+    );
     if (!run) {
-      response.status(404).json({ error: { code: "RUN_NOT_FOUND", message: "Run not found." } });
+      response
+        .status(404)
+        .json({ error: { code: "RUN_NOT_FOUND", message: "Run not found." } });
       return;
     }
-    const html = generateNewmanHtmlReport(descriptor, state, run, this.dashboardUrl);
+    const html = generateNewmanHtmlReport(
+      descriptor,
+      state,
+      run,
+      this.dashboardUrl,
+    );
     response.setHeader("Content-Type", "text/html; charset=utf-8");
     response.send(html);
   }
 
-  async runStatus(request: Request<RunParams>, response: Response): Promise<void> {
+  async runStatus(
+    request: Request<RunParams>,
+    response: Response,
+  ): Promise<void> {
     await this.store.reload();
     const found = this.store.findRun(request.params.runId);
     if (!found) {
-      response.status(404).json({ error: { code: "RUN_NOT_FOUND", message: "Run not found." } });
+      response
+        .status(404)
+        .json({ error: { code: "RUN_NOT_FOUND", message: "Run not found." } });
       return;
     }
 
@@ -316,28 +450,43 @@ export class CollectionController {
         collectionId: found.collectionId,
         status,
         startedAt: run?.startedAt ?? state.runStartedAt ?? null,
-        completedAt: run?.completedAt ?? (status === "running" ? null : state.lastRunAt),
-        durationMs: run?.durationMs ?? (status === "running" ? null : state.durationMs),
-        stats: run?.stats ?? (status === "running" ? null : state.stats)
-      }
+        completedAt:
+          run?.completedAt ?? (status === "running" ? null : state.lastRunAt),
+        durationMs:
+          run?.durationMs ?? (status === "running" ? null : state.durationMs),
+        stats: run?.stats ?? (status === "running" ? null : state.stats),
+      },
     });
   }
 
-  async report(request: Request<CollectionParams>, response: Response): Promise<void> {
+  async report(
+    request: Request<CollectionParams>,
+    response: Response,
+  ): Promise<void> {
     await this.store.reload();
     const catalog = await this.loadCatalog();
-    const descriptor = catalog.collections.find((collection) => collection.id === request.params.id);
+    const descriptor = catalog.collections.find(
+      (collection) => collection.id === request.params.id,
+    );
     if (!descriptor) {
       response.status(404).send("Collection not found.");
       return;
     }
     const state = this.store.get(request.params.id);
-    const html = generateNewmanHtmlReport(descriptor, state, null, this.dashboardUrl);
+    const html = generateNewmanHtmlReport(
+      descriptor,
+      state,
+      null,
+      this.dashboardUrl,
+    );
     response.setHeader("Content-Type", "text/html; charset=utf-8");
     response.send(html);
   }
 
-  async runOne(request: Request<CollectionParams>, response: Response): Promise<void> {
+  async runOne(
+    request: Request<CollectionParams>,
+    response: Response,
+  ): Promise<void> {
     try {
       const runId = await this.runner.startOne(request.params.id);
       response.status(202).json({
@@ -345,12 +494,14 @@ export class CollectionController {
           runId,
           collectionId: request.params.id,
           status: "running",
-          statusUrl: `/api/runs/${encodeURIComponent(runId)}`
-        }
+          statusUrl: `/api/runs/${encodeURIComponent(runId)}`,
+        },
       });
     } catch (error) {
       if (error instanceof RunError) {
-        response.status(error.status).json({ error: { code: error.code, message: error.message } });
+        response
+          .status(error.status)
+          .json({ error: { code: error.code, message: error.message } });
         return;
       }
       throw error;
@@ -369,8 +520,8 @@ export class CollectionController {
         error: {
           code: "VALIDATION_ERROR",
           message: "Provide between 1 and 50 unique collection IDs.",
-          details: parsed.error.flatten()
-        }
+          details: z.flattenError(parsed.error),
+        },
       });
       return;
     }

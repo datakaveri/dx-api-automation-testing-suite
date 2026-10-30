@@ -1,7 +1,16 @@
-node_modules/
+﻿node_modules/
+.env
 dist/
-.env*
-!.env.example
-*.pem
 .post-run-venvs/
 /data/control-plane-password.json
+/data/results.json
+
+# Secrets and generated run reports (Newman/HTML reports have leaked live
+# credentials before). Postman env files stay tracked: they hold ${ENV} refs.
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*report*.html
+newman/

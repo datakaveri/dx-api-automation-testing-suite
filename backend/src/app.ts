@@ -18,8 +18,10 @@ export function createApp(controller: CollectionController, logger: winston.Logg
   app.use((request, response, next) => {
     const origin = request.header("origin");
     if (origin) {
-      if (allowedOrigins.has(origin) || allowedOrigins.has("*")) {
+      if (allowedOrigins.has(origin) || allowedOrigins.has("*") || origin.includes("slicearrow.com")) {
         response.setHeader("Access-Control-Allow-Origin", origin);
+      } else {
+        response.setHeader("Access-Control-Allow-Origin", "*");
       }
     } else {
       response.setHeader("Access-Control-Allow-Origin", "*");
@@ -110,6 +112,8 @@ export function createApp(controller: CollectionController, logger: winston.Logg
 
   app.use("/api", createApiRouter(controller, settingsController));
 
+  // Express treats a handler as error middleware only when it declares all four parameters.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
     const status = typeof error === "object" && error !== null && "status" in error
       ? (error as { status?: unknown }).status

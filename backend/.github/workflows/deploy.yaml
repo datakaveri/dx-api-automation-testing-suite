@@ -1,14 +1,307 @@
-name: Build and Deploy IUDXQA Backend
+name: CI for IUDXQA Backend (Dev)
+
+description: Type-check, scan, test, build and deploy the IUDXQA backend to dev.
 
 on:
   push:
     branches:
-      - dev
+      - neuman
+  # Pull requests run every check; only a push to dev deploys.
+  pull_request:
+    branches:
+      - neuman
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
+  lint:
+    name: ESLint + Type Check
+    runs-on: arc-runner-mal
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Matches the node:22.23.4-slim base image, so CI checks what production runs.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.4"
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      # Pinned, and installed here rather than in package.json. An unpinned
+      # ESLint turns "a new release added a rule" into a red build on an
+      # untouched branch.
+      - name: Install ESLint
+        run: npm install --no-save eslint@10.11.0 @eslint/js@10.0.1 typescript-eslint@8.71.0
+
+      # The repo has no ESLint config yet, so CI supplies the standard
+      # TypeScript rules. Once developers commit their own eslint.config.*,
+      # that one is used instead.
+      - name: ESLint
+        run: |
+          if ! ls eslint.config.* >/dev/null 2>&1; then
+            cat > eslint.config.mjs <<'CONFIG'
+          import js from "@eslint/js";
+          import tseslint from "typescript-eslint";
+
+          export default tseslint.config(
+            { ignores: ["node_modules/", "dist/", "coverage/", "collections/", "previews/", "report-template.html"] },
+            js.configs.recommended,
+            ...tseslint.configs.recommended,
+            {
+              files: ["scripts/**/*.{js,mjs}"],
+              languageOptions: { globals: { process: "readonly", console: "readonly", URL: "readonly", Buffer: "readonly" } },
+            },
+          );
+          CONFIG
+          fi
+          npx eslint .
+
+      - name: TypeScript type check
+        run: npx tsc -p tsconfig.json --noEmit
+
+  # Blocking: collections/ now reads credentials from ${ENV} references.
+  secrets:
+    name: Gitleaks Secret Scan
+    uses: ./.github/workflows/secret-scan.yml
+
+  analyze:
+    name: Test and Analyze
+    needs: [lint, secrets]
+    runs-on: arc-runner-mal
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.4"
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      # spec goes to the log, lcov goes to the file SonarQube reads.
+      - name: Run Tests with Coverage
+        run: |
+          mkdir -p coverage
+          node --import tsx --test --experimental-test-coverage \
+            --test-reporter=spec --test-reporter-destination=stdout \
+            --test-reporter=lcov --test-reporter-destination=coverage/lcov.info \
+            test/*.test.ts
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+      # TEMPORARY: the quality gate is off, and the only rule for now is
+      # overall coverage of the entire code at 80% or more (next step).
+      # Restore this step, and sonar.qualitygate.wait in
+      # sonar-project.properties, to go back to the full quality gate.
+      #
+      # - name: Wait for SonarQube Quality Gate
+      #   uses: SonarSource/sonarqube-quality-gate-action@v1.2.0
+      #   timeout-minutes: 5
+      #   env:
+      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      # Waits for SonarQube to finish processing this analysis, then reads two
+      # figures and fails if either is below 80%:
+      #   - overall coverage: every source file, including ones no test
+      #     touches, which count as 0%;
+      #   - new code coverage: only the lines added or changed in SonarQube's
+      #     new code period.
+      # This is the only check in the pipeline, for now, that blocks on a
+      # finding rather than reporting it.
+      - name: Check overall and new code coverage (minimum 80%)
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          MIN_COVERAGE: "80"
+        run: |
+          node --input-type=module -e '
+          import { readFileSync } from "node:fs";
+
+          const report = Object.fromEntries(
+            readFileSync(".scannerwork/report-task.txt", "utf8")
+              .split("\n").filter(Boolean)
+              .map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]),
+          );
+          const headers = { Authorization: `Bearer ${process.env.SONAR_TOKEN}` };
+          const get = async (url) => {
+            const response = await fetch(url, { headers });
+            if (!response.ok) throw new Error(`${url} returned ${response.status}`);
+            return response.json();
+          };
+
+          let status;
+          do {
+            await new Promise((resolve) => setTimeout(resolve, 5000));
+            ({ task: { status } } = await get(report.ceTaskUrl));
+            console.log(`SonarQube analysis: ${status}`);
+          } while (status === "PENDING" || status === "IN_PROGRESS");
+          if (status !== "SUCCESS") throw new Error(`SonarQube analysis ended ${status}`);
+
+          const { component } = await get(
+            `${process.env.SONAR_HOST_URL}/api/measures/component?component=${encodeURIComponent(report.projectKey)}&metricKeys=coverage,new_coverage`,
+          );
+          const measure = (key) => component.measures.find((m) => m.metric === key);
+          const minimum = Number(process.env.MIN_COVERAGE);
+          let failed = false;
+
+          const overall = measure("coverage")?.value;
+          if (overall === undefined) throw new Error("SonarQube has no overall coverage figure for this project");
+          console.log(`Overall coverage:  ${overall}% (minimum ${minimum}%)`);
+          if (Number(overall) < minimum) {
+            console.error(`::error::Overall coverage ${overall}% is below the ${minimum}% minimum`);
+            failed = true;
+          }
+
+          // New code figures sit under period (SonarQube 8+) or periods (older).
+          // There is none on the first analysis, or when nothing coverable
+          // changed, and that is not a failure.
+          const newCode = measure("new_coverage");
+          const fresh = newCode?.period?.value ?? newCode?.periods?.[0]?.value;
+          if (fresh === undefined) {
+            console.log("New code coverage: none to measure in this analysis");
+          } else {
+            console.log(`New code coverage: ${fresh}% (minimum ${minimum}%)`);
+            if (Number(fresh) < minimum) {
+              console.error(`::error::New code coverage ${fresh}% is below the ${minimum}% minimum`);
+              failed = true;
+            }
+          }
+
+          if (failed) process.exit(1);
+          '
+
+  dependency-scan:
+    name: Dependency CVEs and SBOM
+    needs: [analyze]
+    runs-on: arc-runner-mal
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.4"
+
+      # Runtime dependencies only: dev tooling never ships in the image's
+      # request path.
+      # TEMPORARY: npm audit and pip-audit are report-only (continue-on-error),
+      # so their findings show as warnings without stopping the run. Delete
+      # their continue-on-error lines to make them block too. Syft and Grype
+      # below do block.
+      - name: npm audit
+        continue-on-error: true
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The image installs these for the Control Plane post-run cleanup scripts.
+      - name: pip-audit
+        continue-on-error: true
+        uses: pypa/gh-action-pip-audit@v1.1.0
+        with:
+          inputs: "collections/Control Plane/requirements.txt"
+
+      - name: Generate SBOM with Syft
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: sbom.cyclonedx.json
+          artifact-name: sbom-source.cyclonedx.json
+
+      # Stops the pipeline on a HIGH or CRITICAL finding that has a fix.
+      - name: Scan SBOM with Grype
+        uses: anchore/scan-action@v6
+        # Grype reads accepted findings from .grype.yaml in the repo root
+        # (currently only the faker one newman pulls in).
+        with:
+          sbom: sbom.cyclonedx.json
+          severity-cutoff: high
+          only-fixed: true
+          fail-build: true
+          output-format: table
+
+  image-scan:
+    name: Build and Scan Image
+    needs: [dependency-scan]
+    runs-on: arc-runner-mal
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Same Dockerfile and lockfile the server builds from, so the scan covers
+      # the base image and packages the deployed container will have.
+      - name: Build Docker image (local, not pushed)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          load: true
+          tags: iudxqa-backend:sha-${{ github.sha }}
+          no-cache: true
+
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: iudxqa-backend:sha-${{ github.sha }}
+          # Accepted findings (currently only the faker one newman pulls in).
+          trivyignores: .trivyignore
+          format: table
+          output: trivy-report.txt
+          # Stops the pipeline on a CRITICAL or HIGH finding that has a fix.
+          # The report below is still printed and uploaded when it does.
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+      # The scan writes to a file rather than the log, so print it here too.
+      - name: Show Trivy report
+        if: always()
+        run: cat trivy-report.txt || echo "No Trivy report was produced."
+
+      - name: Upload Trivy report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: trivy-report.txt
+          if-no-files-found: warn
+
   deploy:
-    runs-on: ubuntu-latest
+    name: Deploy
+    needs: [image-scan]
+    # Pushes to dev and manual runs on dev only. A manual run on any other
+    # branch, or any pull request, runs the checks and stops here.
+    if: github.ref == 'refs/heads/dev' && github.event_name != 'pull_request'
+    runs-on: arc-runner-mal
+    # Two pushes in quick succession must not redeploy over each other.
+    concurrency:
+      group: deploy-dev
+      cancel-in-progress: false
     steps:
       # SSH into server, pull code, build and redeploy
       - name: Deploy to server
@@ -22,9 +315,10 @@ jobs:
             set -e
             cd ${{ secrets.DEPLOY_TARGET_DIR }}
 
-            # Pull latest code
-            git fetch origin dev
-            git reset --hard origin/dev
+            # Deploy exactly the commit that passed the checks above, not
+            # whatever dev points at by the time this runs.
+            git fetch origin ${{ github.sha }}
+            git reset --hard FETCH_HEAD
 
             [ -f .env ] || touch .env
             mkdir -p data
@@ -45,3 +339,6 @@ jobs:
             # Clean old iudxqa builds only
             docker image prune -f --filter label=project=iudxqa
             docker ps --filter name=${{ secrets.CONTAINER_NAME }}
+
+      - name: Deployed version
+        run: echo "Deployed iudxqa-backend at ${{ github.sha }}"
