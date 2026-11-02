@@ -18,12 +18,6 @@ pipeline {
     }
   }
 
-  options {
-    timeout(time: 60, unit: 'MINUTES')
-    disableConcurrentBuilds()
-    buildDiscarder(logRotator(numToKeepStr: '20'))
-  }
-
   stages {
 
     stage('Unit Tests') {
