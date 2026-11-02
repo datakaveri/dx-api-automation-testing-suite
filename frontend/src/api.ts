@@ -125,7 +125,7 @@ export async function openAuthenticatedReport(
     throw new Error("Please sign in to view this report.");
   if (!reportTab) throw new Error("Allow pop-ups to open the report.");
   await keycloak.updateToken(30);
-  const reportUrl = new URL(reportPath, `${API_BASE_URL}/`);
+  const reportUrl = new URL(reportPath.replace(/^\/+/, ""), `${API_BASE_URL}/`);
   if (reportUrl.origin !== new URL(API_BASE_URL).origin)
     throw new Error("The report URL is outside the configured API origin.");
   const response = await fetch(reportUrl, {
