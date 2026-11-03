@@ -27,7 +27,12 @@ RUN python3 -m venv /opt/post-run-venvs/control-plane \
     && /opt/post-run-venvs/control-plane/bin/python -m pip install --no-cache-dir --upgrade pip "setuptools>=78.1.1" \
     && /opt/post-run-venvs/control-plane/bin/python -m pip install --no-cache-dir -r "collections/Control Plane/requirements.txt" \
     && /opt/post-run-venvs/control-plane/bin/python -m pip uninstall -y pip \
-    && python3 -c "from pathlib import Path; import hashlib; req=Path('collections/Control Plane/requirements.txt'); marker=Path('/opt/post-run-venvs/control-plane/.requirements.sha256'); marker.write_text(hashlib.sha256(req.read_bytes()).hexdigest())"
+    && python3 -c "from pathlib import Path; import hashlib; req=Path('collections/Control Plane/requirements.txt'); marker=Path('/opt/post-run-venvs/control-plane/.requirements.sha256'); marker.write_text(hashlib.sha256(req.read_bytes()).hexdigest())" \
+    && python3 -m venv /opt/post-run-venvs/ogc \
+    && /opt/post-run-venvs/ogc/bin/python -m pip install --no-cache-dir --upgrade pip "setuptools>=78.1.1" \
+    && /opt/post-run-venvs/ogc/bin/python -m pip install --no-cache-dir -r "collections/OGC/requirements.txt" \
+    && /opt/post-run-venvs/ogc/bin/python -m pip uninstall -y pip \
+    && python3 -c "from pathlib import Path; import hashlib; req=Path('collections/OGC/requirements.txt'); marker=Path('/opt/post-run-venvs/ogc/.requirements.sha256'); marker.write_text(hashlib.sha256(req.read_bytes()).hexdigest())"
 
 # Environment defaults
 ENV NODE_ENV=production

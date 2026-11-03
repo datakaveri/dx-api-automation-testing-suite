@@ -14,3 +14,6 @@ dist/
 *.p12
 *report*.html
 newman/
+
+# Log written by the OGC S3 cleanup script into its run folder
+s3_deletion.log

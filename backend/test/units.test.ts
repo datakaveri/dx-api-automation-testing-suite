@@ -204,6 +204,35 @@ describe("SequelizeResultsStore", () => {
     assert.equal(store.get("c").status, "passed");
   });
 
+  it("reload shares one query across concurrent callers and refetches only changed rows", async () => {
+    const idle = { status: "idle", lastRunAt: null, durationMs: null, stats: null, result: null } as const;
+    const { store, calls, external } = memoryStore({ a: idle, b: idle, gone: { ...idle, status: "failed" } });
+    await store.load();
+    calls.stamps = 0;
+    calls.fullRows = 0;
+
+    await Promise.all([store.reload(), store.reload(), store.reload()]);
+    assert.equal(calls.stamps, 1);
+    assert.equal(calls.fullRows, 0);
+
+    external.write("b", { ...idle, status: "failed" });
+    external.write("new", { ...idle, status: "error" });
+    external.remove("gone");
+    await store.reload();
+    assert.equal(calls.fullRows, 2);
+    assert.equal(store.get("a").status, "idle");
+    assert.equal(store.get("b").status, "failed");
+    assert.equal(store.get("new").status, "error");
+    assert.equal(store.get("gone").status, "idle");
+    assert.equal(store.findRun("x"), null);
+
+    await store.markRunning("a");
+    calls.fullRows = 0;
+    await store.reload();
+    assert.equal(calls.fullRows, 0, "own writes are not downloaded again");
+    assert.equal(store.get("a").status, "running");
+  });
+
   it("fills stat groups missing from rows saved by older versions", async () => {
     const legacyStats = { requests: { total: 2, failed: 1 }, assertions: { total: 3, failed: 0 }, averageResponseTimeMs: 5 };
     const legacyRun = { ...runResult(), stats: legacyStats, runId: "run-old", status: "passed" };

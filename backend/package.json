@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p test/tsconfig.json",
     "start": "tsx src/index.ts",
     "test": "node --import tsx --test test/*.test.ts",
     "prepare": "git config core.hooksPath .githooks || exit 0"

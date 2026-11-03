@@ -5,11 +5,11 @@ description: Type-check, scan, test, build and deploy the IUDXQA backend to dev.
 on:
   push:
     branches:
-      - neuman
+      - dev
   # Pull requests run every check; only a push to dev deploys.
   pull_request:
     branches:
-      - neuman
+      - dev
   workflow_dispatch:
 
 permissions:

@@ -7,13 +7,37 @@ import type { CollectionState } from "../src/types";
 // The real results store over an in-memory stand-in for the Sequelize model.
 export function memoryStore(initial: Record<string, CollectionState> = {}) {
   const rows = new Map(Object.entries(initial));
+  const updatedAt = new Map([...rows.keys()].map((id) => [id, new Date(0)]));
+  const calls = { stamps: 0, fullRows: 0 };
+  let clock = 0;
   const model = {
-    findAll: async () => [...rows].map(([collectionId, state]) => ({ collectionId, state })),
+    findAll: async (options: { attributes?: string[]; where?: { collectionId: string[] } } = {}) => {
+      if (options.attributes) {
+        calls.stamps += 1;
+        return [...rows.keys()].map((collectionId) => ({ collectionId, updatedAt: updatedAt.get(collectionId) }));
+      }
+      const ids = options.where?.collectionId ?? [...rows.keys()];
+      calls.fullRows += ids.length;
+      return ids.filter((id) => rows.has(id)).map((collectionId) => ({ collectionId, state: rows.get(collectionId), updatedAt: updatedAt.get(collectionId) }));
+    },
     upsert: async ({ collectionId, state }: { collectionId: string; state: CollectionState }) => {
       rows.set(collectionId, structuredClone(state));
+      updatedAt.set(collectionId, new Date((clock += 1)));
+      return [{ collectionId, updatedAt: updatedAt.get(collectionId) }, null];
     },
   };
-  return { store: new SequelizeResultsStore(model as never), rows };
+  // Simulates another server instance writing to (or deleting from) the shared table.
+  const external = {
+    write: (collectionId: string, state: CollectionState) => {
+      rows.set(collectionId, structuredClone(state));
+      updatedAt.set(collectionId, new Date((clock += 1)));
+    },
+    remove: (collectionId: string) => {
+      rows.delete(collectionId);
+      updatedAt.delete(collectionId);
+    },
+  };
+  return { store: new SequelizeResultsStore(model as never), rows, calls, external };
 }
 
 // The real settings store needs only findByPk and upsert from its model.

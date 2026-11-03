@@ -1,0 +1,9 @@
+{
+  "bucket": "s3-ap-south-1-iudx-v2-ogc-tiles",
+  "region": "ap-south-1",
+  "aws_access_key_id": "${OGC_S3_ACCESS_KEY_ID}",
+  "aws_secret_access_key": "${OGC_S3_SECRET_ACCESS_KEY}",
+  "uuids": [],
+  "delete_type": "both",
+  "auto_confirm": true
+}

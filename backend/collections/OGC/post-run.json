@@ -1,0 +1,20 @@
+{
+  "export": {
+    "feature_resource_id": "environment.feature_resource_id"
+  },
+  "python": {
+    "requirements": "requirements.txt"
+  },
+  "steps": [
+    {
+      "name": "Delete uploaded GPKG from S3",
+      "command": "python",
+      "args": [
+        "../../automation-scripts/OGC_Automation_Script/s3_deletion.py",
+        "{{feature_resource_id}}",
+        "gpkg",
+        "--confirm"
+      ]
+    }
+  ]
+}
