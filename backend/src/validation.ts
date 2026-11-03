@@ -13,7 +13,7 @@ export const selectedRunRequestSchema = z
     collectionIds.forEach((id, index) => {
       if (seen.has(id)) {
         context.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["collectionIds", index],
           message: `Duplicate collection ID: ${id}`,
         });
@@ -60,7 +60,7 @@ export function validateRouteParam(name: string): RequestHandler {
         error: {
           code: "VALIDATION_ERROR",
           message: `Invalid ${name}.`,
-          details: result.error.flatten(),
+          details: z.flattenError(result.error),
         },
       });
       return;

@@ -1,0 +1,64 @@
+{
+  "control_plane": {
+    "base_url": "https://<controlplane-host>",
+    "timeout_seconds": 30,
+    "verify_tls": true
+  },
+  "keycloak": {
+    "url": "https://<keycloak-host>/auth",
+    "realm": "<realm>",
+    "user_client_id": "postman-client",
+    "user_client_secret": "",
+    "admin_client_id": "",
+    "admin_client_secret": "${KC_ADMIN_SECRET:-}",
+    "timeout_seconds": 30,
+    "verify_tls": true
+  },
+  "target": {
+    "username": "",
+    "user_id": "",
+    "password": "${PROVIDER_REQ_PASS:-}",
+    "token": ""
+  },
+  "actors": {
+    "cos_admin": {
+      "username": "",
+      "password": "${COS_ADMIN_PASS:-}",
+      "token": ""
+    }
+  },
+  "clean": {
+    "requests_via_database": true,
+    "include_org_requests": false,
+    "revoke_provider_role": true,
+    "provider_role_name": "provider",
+    "revoke_even_if_org_provider": false,
+    "list_page_size": 50,
+    "list_max_pages": 20,
+    "verify": true
+  },
+  "postgres": {
+    "host": "",
+    "port": 5432,
+    "database": "",
+    "schema": "aaa",
+    "user": "",
+    "password": "${PG_PASS:-}",
+    "sslmode": "require",
+    "connect_timeout_seconds": 10
+  },
+  "endpoints": {
+    "kc_token": "/realms/{realm}/protocol/openid-connect/token",
+    "kc_users": "/admin/realms/{realm}/users",
+    "kc_realm_role": "/admin/realms/{realm}/roles/{role}",
+    "kc_role_mappings": "/admin/realms/{realm}/users/{user_id}/role-mappings/realm",
+    "cp_user_info": "/iudx/v2/auth/user",
+    "cp_own_platform_request": "/iudx/v2/auth/user/platform/provider-requests",
+    "cp_admin_platform_requests": "/iudx/v2/auth/admin/platform/provider-requests"
+  },
+  "logging": {
+    "level": "INFO",
+    "print_responses": false,
+    "response_preview_chars": 1000
+  }
+}

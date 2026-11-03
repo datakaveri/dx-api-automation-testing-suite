@@ -1,186 +1,30 @@
-import fs from "node:fs";
 import { formatIST } from "./formatTime.js";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import type {
   CollectionDescriptor,
   CollectionState,
   ExecutionResult,
+  RunStats,
   SkippedRequest,
 } from "./types";
-
-const serverSrcDir = path.dirname(fileURLToPath(import.meta.url));
-const projectRootDir = path.resolve(serverSrcDir, "..", "..");
-const reportFilePath = path.join(projectRootDir, "reportfile.html");
 
 function escapeHtml(str: string | null | undefined): string {
   if (!str) return "";
   return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
-function getFileServerReport(
-  nowFormatted: string,
-  durationSec: string,
-): string | null {
-  try {
-    if (!fs.existsSync(reportFilePath)) return null;
-    let html = fs.readFileSync(reportFilePath, "utf8");
+const STATUS_TEXT: Record<number, string> = {
+  400: "Bad Request",
+  401: "Unauthorized",
+  403: "Forbidden",
+  404: "Not Found",
+};
 
-    // 1. Add Back to Dashboard button & clean theme switch
-    html = html.replace(
-      /<div class="container">\s*<div class="container">\s*<label>Light<\/label>[\s\S]*?<label>Dark<\/label>\s*<\/div>/,
-      `<div class="container">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <div>
-                <a href="/" class="btn btn-outline-info btn-sm font-weight-bold shadow-sm" style="border-radius: 6px; padding: 6px 16px; font-size: 13px;">
-                    <i class="fas fa-arrow-left mr-1.5"></i> Back to Dashboard
-                </a>
-            </div>
-            <div class="d-flex align-items-center">
-                <label class="mr-2 mb-0 font-weight-bold small text-muted">Light</label>
-                <label id="switch" class="switch mb-0">
-                    <input type="checkbox" onchange="toggleTheme()" id="slider">
-                    <span class="slider round"></span>
-                </label>
-                <label class="ml-2 mb-0 font-weight-bold small text-muted">Dark</label>
-            </div>
-        </div>`,
-    );
-
-    // 2. Update timestamp
-    html = html.replace(
-      /<h5 class="text-center">.*?<\/h5>/,
-      `<h5 class="text-center">${escapeHtml(nowFormatted)}</h5>`,
-    );
-
-    // 3. Update duration
-    html = html.replace(
-      /<strong> Total run duration:<\/strong>\s*[0-9.]+s/g,
-      `<strong> Total run duration:</strong> ${durationSec}s`,
-    );
-
-    // 4. Update total requests & failed tests badge
-    html = html.replace(
-      /Total Requests <span class="badge badge-light">\d+<\/span>/g,
-      'Total Requests <span class="badge badge-light">41</span>',
-    );
-    html = html.replace(
-      /Failed Tests <span class="badge badge-light">\d+<\/span>/g,
-      'Failed Tests <span class="badge badge-light">0</span>',
-    );
-
-    // Update Authentication folder count
-    html = html.replace(
-      /Authentication &amp; Authorization - \d+ Requests in the folder/,
-      "Authentication &amp; Authorization - 3 Requests in the folder",
-    );
-
-    // 5. Update failed card in summary
-    html = html.replace(
-      /<div class="card-body bg-danger">\s*<div class="rotate">\s*<i class="fa fa-plus-circle fa-5x"><\/i>\s*<\/div>\s*<h6 class="text-uppercase">Total Failed Tests<\/h6>\s*<h1 class="display-1">\d+<\/h1>\s*<\/div>/,
-      `<div class="card-body bg-success">
-       <div class="rotate">
-        <i class="fa fa-plus-circle fa-5x"></i>
-       </div>
-       <h6 class="text-uppercase">Total Failed Tests</h6>
-       <h1 class="display-1">0</h1>
-      </div>`,
-    );
-
-    // 6. Update requests and assertions table in summary
-    html = html.replace(
-      /<tr>\s*<td>Requests<\/td>\s*<td class="text-center">\d+<\/td>\s*<td class="text-center">\d+<\/td>\s*<\/tr>/,
-      `<tr>
-                        <td>Requests</td>
-                        <td class="text-center">41</td>
-                        <td class="text-center">0</td>
-                    </tr>`,
-    );
-    html = html.replace(
-      /<tr class="table-danger">\s*<td>Assertions<\/td>\s*<td class="text-center">(\d+)<\/td>\s*<td class="text-center">\d+<\/td>\s*<\/tr>/,
-      `<tr class="">
-                        <td>Assertions</td>
-                        <td class="text-center">$1</td>
-                        <td class="text-center">0</td>
-                    </tr>`,
-    );
-
-    // 7. Update failed tab
-    html = html.replace(
-      /<div class="tab-pane fade" id="pills-failed"[\s\S]*?(?=<div class="tab-pane fade" id="pills-skipped")/g,
-      `<div class="tab-pane fade" id="pills-failed" role="tabcard" aria-labelledby="pills-failed-tab">
-                <div class="alert alert-success text-uppercase text-center py-5">
-                    <h1>There are no failed tests <i class="far fa-thumbs-up"></i></h1>
-                    <p class="mb-0">All 41 requests and 75 assertions passed successfully.</p>
-                </div>
-            </div>
-            `,
-    );
-
-    // 8. Update List files - 403 request item card updates
-    html = html.replace(
-      /Iteration 1 - AssertionError - 1\. List Files - List files - 403/g,
-      "Iteration 1 - 1. List Files - List files - 403",
-    );
-    html = html.replace(
-      /<div class="card-header bg-danger">\s*<a data-toggle="collapse" href="#" data-target="#collapse-97629b28-9bbf-4aab-819a-932b511da535"/,
-      '<div class="card-header bg-success">\n                        <a data-toggle="collapse" href="#" data-target="#collapse-97629b28-9bbf-4aab-819a-932b511da535"',
-    );
-
-    html = html.replace(
-      /<tr class="table-danger">\s*<td class="text-nowrap"><strong>Status code is 403 Forbidden<\/strong><\/td>[\s\S]*?<\/tr>/,
-      `<tr class="table-success">
-                                                    <td class="text-nowrap"><strong>Status code is 403 Forbidden</strong></td>
-                                                    <td class="text-center font-weight-bold"><span class="badge badge-success">PASS</span></td>
-                                                    <td>Assertion passed successfully</td>
-                                                </tr>`,
-    );
-
-    html = html.replace(
-      /<tr class="table-danger">\s*<td class="text-nowrap"><strong>Error code is FORBIDDEN with role rejection message<\/strong><\/td>[\s\S]*?<\/tr>/,
-      `<tr class="table-success">
-                                                    <td class="text-nowrap"><strong>Error code is FORBIDDEN with role rejection message</strong></td>
-                                                    <td class="text-center font-weight-bold"><span class="badge badge-success">PASS</span></td>
-                                                    <td>Assertion passed successfully</td>
-                                                </tr>`,
-    );
-
-    html = html.replace(
-      /<div class="progress-bar bg-danger" style="width: 0%" role="progressbar">[\s\S]*?0 %[\s\S]*?<\/div>/,
-      `<div class="progress-bar bg-success" style="width: 100%" role="progressbar">
-                                                    <h5 style="padding-top:5px;"><strong>100 %</strong></h5>
-                                                </div>`,
-    );
-
-    html = html.replace(
-      /<strong> Response Code:<\/strong>\s*<span class="float-right badge-outline badge badge-danger">\s*401\s*-\s*Unauthorized<\/span>/,
-      '<strong> Response Code:</strong> <span class="float-right badge-outline badge badge-success"> 403 - Forbidden</span>',
-    );
-
-    html = html.replace(
-      /<i class="fas fa-info-circle float-left resultsInfoPass"\s*style="color: #c24a3f; padding-top: 4px;"><\/i>/g,
-      '<i class="fas fa-info-circle float-left resultsInfoPass" style="color: #3c9372; padding-top: 4px;"></i>',
-    );
-
-    html = html.replace(
-      /\$\("#iteration-0"\)\.removeClass\('itPassed'\)\.addClass\('itFailed'\)/g,
-      "// iteration passed",
-    );
-
-    return html;
-  } catch (err) {
-    console.error(
-      "Error generating File Server report from reportfile.html:",
-      err,
-    );
-    return null;
-  }
-}
+const METHOD_BADGE: Record<string, string> = { GET: "primary", POST: "success" };
 
 export function generateNewmanHtmlReport(
   descriptor: CollectionDescriptor,
@@ -188,7 +32,7 @@ export function generateNewmanHtmlReport(
   customResult?: {
     durationMs?: number;
     completedAt?: string;
-    stats?: any;
+    stats?: RunStats;
     executions?: ExecutionResult[];
     skippedRequests?: SkippedRequest[];
   } | null,
@@ -211,9 +55,7 @@ export function generateNewmanHtmlReport(
   const failedRequests = stats.requests.failed;
   const passedRequests = totalRequests - failedRequests;
   // Tests are defined as one run per collection request throughout the API.
-  const totalTests = stats.tests.total;
   const failedTests = stats.tests.failed;
-  const passedTests = totalTests - failedTests;
   const totalAssertions = stats.assertions.total;
   const failedAssertions = stats.assertions.failed;
   const passedAssertions = totalAssertions - failedAssertions;
@@ -228,11 +70,9 @@ export function generateNewmanHtmlReport(
     ) /
     (1024 * 1024)
   ).toFixed(2);
-  const nowFormatted = customResult?.completedAt
-    ? formatIST(new Date(customResult.completedAt))
-    : state.lastRunAt
-      ? formatIST(new Date(state.lastRunAt))
-      : formatIST(new Date());
+  const lastRun = customResult?.completedAt || state.lastRunAt;
+  const nowFormatted = formatIST(lastRun ? new Date(lastRun) : new Date());
+  const failedPlural = failedRequests === 1 ? "" : "s";
 
   // Group executions by folder
   const folderMap = new Map<string, ExecutionResult[]>();
@@ -252,7 +92,6 @@ export function generateNewmanHtmlReport(
     folderIndex++;
     const folderId = `folder-fld-${folderIndex}`;
     const folderCollapseId = `folder-collapse-${folderIndex}`;
-    const folderFailed = execs.some((e) => e.failed);
 
     let requestsHtml = "";
     let failedRequestsHtml = "";
@@ -264,36 +103,20 @@ export function generateNewmanHtmlReport(
       const statusCode = exec.statusCode;
       const isSuccessStatus =
         statusCode !== null && statusCode >= 200 && statusCode < 300;
-      const statusText =
-        statusCode === null
-          ? "No response"
-          : isSuccessStatus
-            ? "OK"
-            : statusCode === 201
-              ? "Created"
-              : statusCode === 204
-                ? "No Content"
-                : statusCode === 400
-                  ? "Bad Request"
-                  : statusCode === 401
-                    ? "Unauthorized"
-                    : statusCode === 403
-                      ? "Forbidden"
-                      : statusCode === 404
-                        ? "Not Found"
-                        : "Error";
+      // Every 2xx reads "OK", so only error codes need their own label.
+      let statusText = "No response";
+      if (isSuccessStatus) statusText = "OK";
+      else if (statusCode !== null) statusText = STATUS_TEXT[statusCode] ?? "Error";
       const latency = exec.responseTimeMs;
       const sizeKb = ((exec.responseSize ?? 0) / 1024).toFixed(2);
-      const passRate =
-        exec.assertions.length > 0
-          ? Math.round(
-              (exec.assertions.filter((a) => a.passed).length /
-                exec.assertions.length) *
-                100,
-            )
-          : exec.failed
-            ? 0
-            : 100;
+      let passRate = exec.failed ? 0 : 100;
+      if (exec.assertions.length > 0)
+        passRate = Math.round(
+          (exec.assertions.filter((a) => a.passed).length /
+            exec.assertions.length) *
+            100,
+        );
+      const noHeadersText = exec.requestHeaders ? "No headers sent" : "Not recorded for this run";
 
       const requestCardHtml = `
       <div class="row iteration-0">
@@ -312,7 +135,7 @@ export function generateNewmanHtmlReport(
                       <div class="card border-info" style="width: 50rem;">
                         <div class="card-body">
                           <h5 class="card-title text-uppercase text-white text-center bg-info">Request Information</h5>
-                          <span><i class="fas fa-info-circle"></i></span><strong> Request Method:</strong> <span class="badge-outline-success badge badge-${method === "GET" ? "primary" : method === "POST" ? "success" : "warning"}"> ${method}</span><br>
+                          <span><i class="fas fa-info-circle"></i></span><strong> Request Method:</strong> <span class="badge-outline-success badge badge-${METHOD_BADGE[method] ?? "warning"}"> ${method}</span><br>
                           <span><i class="fas fa-info-circle"></i></span><strong> Request URL:</strong> <a href="${escapeHtml(exec.url)}" target="_blank">${escapeHtml(exec.url)}</a><br>
                         </div>
                       </div>
@@ -352,7 +175,7 @@ export function generateNewmanHtmlReport(
                                     ? exec.requestHeaders
                                         .map((header) => `<tr><td class="text-nowrap">${escapeHtml(header.key)}</td><td class="text-wrap">${escapeHtml(header.value)}</td></tr>`)
                                         .join("")
-                                    : `<tr><td colspan="2" class="text-center text-muted">${exec.requestHeaders ? "No headers sent" : "Not recorded for this run"}</td></tr>`
+                                    : `<tr><td colspan="2" class="text-center text-muted">${noHeadersText}</td></tr>`
                                 }
                               </tbody>
                             </table>
@@ -1079,7 +902,7 @@ body.theme-light code {
               failedRequests > 0
                 ? `
               <div class="alert alert-danger text-center font-weight-bold">
-                ${failedRequests} failed request${failedRequests === 1 ? "" : "s"}. Showing only failed requests below.
+                ${failedRequests} failed request${failedPlural}. Showing only failed requests below.
               </div>
               <div class="btn-group float-right mb-3" role="group">
                 <button class="btn btn-outline-danger btn-sm" onclick="$('#failed-execution-data .collapse').collapse('show');">Expand All</button>

@@ -2907,7 +2907,7 @@
                 "header": [
                   {
                     "key": "Authorization",
-                    "value": "Basic 3919b0db-f724-4947-a637-113d0b32e230:2ec9d6e8207874e8fb87abb766116022908b73b4",
+                    "value": "Basic {{appidusername}}:{{appidusernamepass}}",
                     "disabled": true
                   },
                   {
@@ -3340,7 +3340,7 @@
     },
     {
       "key": "consumerToken",
-      "value": ""
+      "value": "${DP_CONSUMER_TOKEN}"
     },
     {
       "key": "app_id",
@@ -3348,7 +3348,7 @@
     },
     {
       "key": "app_secret",
-      "value": "e62cead13b8a9862c817a24c5415a50552f8e1b4"
+      "value": ""
     },
     {
       "key": "bearer_token_0eqp"

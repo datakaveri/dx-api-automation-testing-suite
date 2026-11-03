@@ -17,11 +17,9 @@ export interface KeycloakClaims {
   [claim: string]: unknown;
 }
 
-declare global {
-  namespace Express {
-    interface Request {
-      user?: KeycloakClaims;
-    }
+declare module "express-serve-static-core" {
+  interface Request {
+    user?: KeycloakClaims;
   }
 }
 
@@ -127,9 +125,12 @@ export async function requireAuthentication(request: Request, response: Response
     }
     if (error instanceof JwksUnavailable) {
       const cause = error.cause;
+      let causeText = "Unknown JWKS error";
+      if (cause instanceof Error) causeText = cause.message;
+      else if (cause != null) causeText = JSON.stringify(cause);
       console.error("Unable to retrieve Keycloak signing keys", {
         jwksUrl: error.jwksUrl,
-        cause: cause instanceof Error ? cause.message : String(cause ?? "Unknown JWKS error")
+        cause: causeText
       });
       response.status(503).json({ error: { code: "AUTHENTICATION_UNAVAILABLE", message: "Could not verify the access token." } });
       return;

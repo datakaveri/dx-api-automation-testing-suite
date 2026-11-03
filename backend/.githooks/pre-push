@@ -1,0 +1,49 @@
+#!/bin/sh
+# Backstop for commits made with `git commit --no-verify`, cherry-picked,
+# rebased or merged in: scans every commit being pushed (content and message)
+# and the full tree of each pushed ref.
+set -eu
+
+if ! gitleaks dir --help >/dev/null 2>&1; then
+  echo "pre-push: gitleaks >= 8.19 is required to push from this repo." >&2
+  echo "  Install: https://github.com/gitleaks/gitleaks#installing" >&2
+  exit 1
+fi
+
+root=$(git rev-parse --show-toplevel)
+zero=0000000000000000000000000000000000000000
+tree=$(mktemp -d)
+trap 'rm -rf "$tree"' EXIT
+failed=0
+cfg="$root/.gitleaks.toml"
+flags="--ignore-gitleaks-allow --max-archive-depth 3 --redact --no-banner -v"
+
+# Commands in the loop read /dev/null, so none can swallow the ref lines that
+# git writes to this hook's stdin.
+while read -r local_ref local_oid remote_ref remote_oid; do
+  [ "$local_oid" = "$zero" ] && continue # deleting a remote ref
+  if [ "$remote_oid" = "$zero" ]; then
+    range="$local_oid --not --remotes"
+  else
+    range="$remote_oid..$local_oid"
+  fi
+
+  echo "pre-push: scanning commits $range"
+  # shellcheck disable=SC2086 # $flags and $range are word lists
+  gitleaks git "$root" --log-opts="$range" --config "$cfg" $flags </dev/null || failed=1
+  # shellcheck disable=SC2086
+  git log --format=%B $range </dev/null | gitleaks stdin --config "$cfg" $flags || failed=1
+
+  echo "pre-push: scanning files at $local_ref"
+  rm -rf "$tree" && mkdir "$tree"
+  git archive "$local_oid" </dev/null | tar -x -C "$tree"
+  # shellcheck disable=SC2086
+  (cd "$tree" && gitleaks dir . --config "$cfg" $flags </dev/null) || failed=1
+done
+
+if [ "$failed" -ne 0 ]; then
+  echo "" >&2
+  echo "pre-push: SECRET DETECTED - push blocked. Remove it from the commit(s) above" >&2
+  echo "  (git commit --amend / git rebase -i), then rotate it if it was ever pushed." >&2
+  exit 1
+fi

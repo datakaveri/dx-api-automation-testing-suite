@@ -1,8 +1,9 @@
+import type { SentMessageInfo } from "nodemailer";
 import type winston from "winston";
 import type { CollectionController } from "./controllers/collectionController";
 import type { Mailer } from "./mailer";
 import type { RunManager } from "./runner";
-import { INTERVAL_MS, type SettingsStore, type RerunInterval } from "./repositories/settingsStore";
+import { INTERVAL_MS, type SettingsStore } from "./repositories/settingsStore";
 
 export class AutoRerunScheduler {
   private timer: NodeJS.Timeout | null = null;
@@ -24,7 +25,7 @@ export class AutoRerunScheduler {
       return;
     }
     const ms = (interval in INTERVAL_MS)
-      ? INTERVAL_MS[interval as Exclude<RerunInterval, "off">]
+      ? INTERVAL_MS[interval]
       : (15 * 60 * 1000);
     this.timer = setInterval(() => void this.tick(), ms);
     this.logger.info("Auto re-run scheduled", { interval, intervalMs: ms, runNow });
@@ -64,7 +65,7 @@ export class AutoRerunScheduler {
     }
   }
 
-  private async sendEmail(kind: string, send: (recipients: string[]) => Promise<any>): Promise<void> {
+  private async sendEmail(kind: string, send: (recipients: string[]) => Promise<SentMessageInfo>): Promise<void> {
     const { recipients } = this.settings.get();
     if (!this.mailer.isConfigured() || recipients.length === 0) {
       this.logger.warn("Auto re-run email not sent because SMTP or recipients are not configured", { kind });

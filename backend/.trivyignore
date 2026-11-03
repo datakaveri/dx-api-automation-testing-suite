@@ -1,0 +1,6 @@
+# @faker-js/faker 5.5.3 comes in through newman (postman-collection). It cannot
+# be upgraded without breaking the Postman runs, so the finding is accepted.
+# Remove this once newman ships a fixed faker. Listed under both IDs the
+# scanners use for it.
+CVE-2026-73231
+GHSA-qxc2-j82w-r537

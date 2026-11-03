@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import { z } from "zod";
 import type { SettingsStore } from "../repositories/settingsStore";
 import type { AutoRerunScheduler } from "../scheduler";
 import { autoRerunSettingsSchema } from "../validation";
@@ -22,7 +23,7 @@ export class SettingsController {
         error: {
           code: "VALIDATION_ERROR",
           message: "Invalid auto re-run settings.",
-          details: parsed.error.flatten()
+          details: z.flattenError(parsed.error)
         }
       });
       return;

@@ -7,6 +7,9 @@ assert.equal(formatISTDate(new Date("2026-10-13T11:48:37Z")), "13 Oct 2026");
 assert.equal(formatISTTime(new Date("2026-10-13T11:48:37Z")), "05:18:37 pm");
 
 // Run npm run build first, then node scripts/previewMail.mjs.
+// Links use the same PUBLIC_API_URL / DASHBOARD_URL as the server, so previews show your real URLs.
+const apiUrl = process.env.PUBLIC_API_URL || "http://localhost:4000";
+const dashboardUrl = process.env.DASHBOARD_URL || "http://localhost:5173";
 const startedAt = new Date("2026-10-13T04:30:00Z");
 const completedAt = new Date("2026-10-13T04:32:15Z");
 await mkdir("previews", { recursive: true });
@@ -20,7 +23,7 @@ for (const failed of [false, true]) {
   const report = { startedAt, completedAt, data: {
     kpis: { totalCollections: 3, passedCollections: failed ? 2 : 3, failedCollections: failed ? 1 : 0, totalApis: 120, failedAssertions: failed ? 2 : 0 }, collections,
   } };
-  const html = buildRunReportHtml(report, "http://localhost:4000", process.env.DASHBOARD_URL || "http://localhost:8080");
+  const html = buildRunReportHtml(report, apiUrl, dashboardUrl);
   assert.ok(html.includes("Hi Team,"));
   assert.ok(html.includes("Daily API Health Report"));
   assert.ok(html.includes("Execution Details"));
