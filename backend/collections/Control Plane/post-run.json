@@ -43,6 +43,7 @@
     {
       "name": "Clean up ngsl data",
       "command": "python",
+      "enabledBy": "RUN_NGSILD_CLEANUP",
       "args": [
         "../../automation-scripts/NGSILD_Automation_Script/ngsild_delete_v1.py",
         "--config",
