@@ -61,7 +61,7 @@ export default function App() {
 
   const handleLogout = () => {
     setIsProfileMenuOpen(false);
-    if (keycloak) void keycloak.logout({ redirectUri: globalThis.location.origin });
+    if (keycloak) void keycloak.logout({ redirectUri: globalThis.location.origin + import.meta.env.BASE_URL });
   };
 
   useEffect(() => {
