@@ -1,0 +1,71 @@
+{
+  "postgres": {
+    "host": "<postgres-host>",
+    "port": 5432,
+    "database": "iudx_v2_auth",
+    "schema": "aaa",
+    "user": "<db-user>",
+    "password": "${ACCESS_EXPIRE_PG_PASS:-}",
+    "sslmode": "require",
+    "connect_timeout_seconds": 10
+  },
+  "target": {
+    "request_ids": [],
+    "policy_id": ""
+  },
+  "expiry": {
+    "at": "now",
+    "offset_seconds": 0
+  },
+  "checks": {
+    "require_request_status": ["GRANTED"],
+    "allowed_asset_types": ["adex:DataBank", "adex:AiModel"],
+    "policy_statuses": ["ACTIVE"],
+    "require_policy": true
+  },
+  "policy_lookup": {
+    "fallback_by_consumer_item": true
+  },
+  "steps": {
+    "request": true,
+    "policy": true,
+    "access_rule": true,
+    "subscriptions": true
+  },
+  "tables": {
+    "request": "request",
+    "policy": "policy",
+    "access_rule": "access_rule",
+    "subscriptions": "subscriptions"
+  },
+  "columns": {
+    "request_id": "request_id",
+    "request_status": "status",
+    "request_expiry": "expiry_at",
+    "request_consumer_id": "consumer_id",
+    "request_item_id": "item_id",
+    "request_asset_type": "asset_type",
+    "request_asset_name": "asset_name",
+    "request_consumer_email": "consumer_email_id",
+    "policy_id": "_id",
+    "policy_request_id": "request_id",
+    "policy_status": "status",
+    "policy_expiry": "expiry_at",
+    "policy_consumer_id": "consumer_id",
+    "policy_item_id": "item_id",
+    "policy_type": "policy_type",
+    "rule_id": "_id",
+    "rule_policy_id": "policy_id",
+    "rule_status": "status",
+    "rule_expiry": "expiry_at",
+    "sub_id": "id",
+    "sub_queue": "queue_name",
+    "sub_user_id": "user_id",
+    "sub_entity_id": "entityid",
+    "sub_expiry": "expiryat"
+  },
+  "logging": {
+    "level": "INFO",
+    "print_sql": true
+  }
+}
