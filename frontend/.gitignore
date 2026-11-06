@@ -4,3 +4,11 @@ dist/
 !.env.example
 *.tsbuildinfo
 *.pem
+
+# Secrets and generated run reports (Newman/HTML reports have leaked live
+# credentials before). Postman env files stay tracked: they hold ${ENV} refs.
+*.pem
+*.key
+*.p12
+*report*.html
+newman/

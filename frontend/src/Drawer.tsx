@@ -1,30 +1,120 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiUrl } from "./api";
-import { formatDuration, formatSize } from "./format";
-import type { Collection, RunResult } from "./types";
+import { formatDuration, formatLastRun, formatNumber, formatSize, percent, shortEnvironment } from "./format";
+import { Icon } from "./Icon";
+import { StatusBadge } from "./StatusBadge";
+import type { Collection, ExecutionResult, RunResult } from "./types";
 
 interface DrawerProps {
   collection: Collection;
   result: RunResult | null;
   loading: boolean;
+  error?: string | null;
   onClose: () => void;
 }
 
-const methodBadgeStyles: Record<string, string> = {
-  GET: "bg-sky-600 text-white font-bold shadow-xs",
-  POST: "bg-emerald-600 text-white font-bold shadow-xs",
-  PUT: "bg-amber-600 text-white font-bold shadow-xs",
-  PATCH: "bg-purple-600 text-white font-bold shadow-xs",
-  DELETE: "bg-rose-600 text-white font-bold shadow-xs"
+const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+
+const isSuccessCode = (code: number | null) => code !== null && code >= 200 && code < 300;
+const passedAssertions = (execution: ExecutionResult) => execution.assertions.filter((a) => a.passed).length;
+
+function MethodTag({ method }: Readonly<{ method: string }>) {
+  const upper = method.toUpperCase();
+  const className = METHODS.includes(upper) ? `method m-${upper}` : "method";
+  return <span className={className}>{method}</span>;
+}
+
+function CodeTag({ execution, prefix }: Readonly<{ execution: ExecutionResult; prefix: string }>) {
+  return (
+    <span className={`code mono${isSuccessCode(execution.statusCode) ? "" : " bad"}`}>
+      {execution.statusCode === null ? "No response" : `${prefix}${execution.statusCode}`}
+    </span>
+  );
+}
+
+function ResultBadge({ failed }: Readonly<{ failed: boolean }>) {
+  return <StatusBadge status={failed ? "failed" : "passed"} />;
+}
+
+function SplitBar({ passed, total }: Readonly<{ passed: number; total: number }>) {
+  const width = total ? (passed / total) * 100 : 0;
+  return (
+    <div className="stat-bar" aria-hidden="true">
+      <i style={{ width: `${width}%` }} />
+      {passed < total && <i className="f" style={{ width: `${Math.max(100 - width, 1.5)}%` }} />}
+    </div>
+  );
+}
+
+type ExecutionFilter = {
+  folder: string;
+  method: string;
+  status: "all" | "passed" | "failed";
+  query: string;
 };
 
-export function Drawer({ collection, result, loading, onClose }: DrawerProps) {
+function matchesFilter(e: ExecutionResult, f: ExecutionFilter) {
+  if (f.folder !== "all" && e.folder !== f.folder) return false;
+  if (f.method !== "all" && e.method.toUpperCase() !== f.method) return false;
+  if (f.status !== "all" && e.failed !== (f.status === "failed")) return false;
+  return !f.query || `${e.name} ${e.url} ${e.method} ${e.folder ?? ""}`.toLowerCase().includes(f.query);
+}
+
+function filterExecutions(executions: ExecutionResult[], f: ExecutionFilter) {
+  return executions.filter((e) => matchesFilter(e, f));
+}
+
+// Keeps folder order; requests without a known folder go last.
+function groupByFolder(executions: ExecutionResult[], folders: string[]) {
+  const known = new Set(folders);
+  const grouped = folders.flatMap((folder) => executions.filter((e) => e.folder === folder));
+  return [...grouped, ...executions.filter((e) => !e.folder || !known.has(e.folder))];
+}
+
+function NoEndpoints({ configured }: Readonly<{ configured: boolean }>) {
+  return (
+    <div className="empty">
+      <Icon name="search" size={28} />
+      <h3>{configured ? "No matching endpoints found" : "No endpoints configured"}</h3>
+      <p>{configured ? "Change the search, result or method filter to see more." : "This collection currently has no API endpoints."}</p>
+    </div>
+  );
+}
+
+function collectFolders(executions: ExecutionResult[]) {
+  return [...new Set(executions.flatMap((e) => (e.folder ? [e.folder] : [])))];
+}
+
+function summarizeRun(collection: Collection, result: RunResult | null) {
+  const executions = result?.executions ?? [];
+  const totalReqs = result?.stats.requests.total ?? collection.apiCount;
+  const failedReqs = result?.stats.requests.failed ?? 0;
+  const hasRequests = totalReqs > 0;
+  const failedExecutions = executions.filter((e) => e.failed);
+  return {
+    executions,
+    totalReqs,
+    failedReqs,
+    passedReqs: hasRequests ? totalReqs - failedReqs : 0,
+    avgLatency: result?.stats.averageResponseTimeMs ?? (hasRequests ? 42 : 0),
+    assertionTotal: executions.reduce((sum, e) => sum + e.assertions.length, 0),
+    assertionPassed: executions.reduce((sum, e) => sum + passedAssertions(e), 0),
+    latencies: executions.map((e) => e.responseTimeMs).filter((ms): ms is number => ms !== null),
+    failedExecutions,
+    failedFolderCount: new Set(failedExecutions.map((e) => e.folder ?? "")).size,
+    passedCount: executions.length - failedExecutions.length,
+  };
+}
+
+export function Drawer({ collection, result, loading, error, onClose }: Readonly<DrawerProps>) {
   const backButtonRef = useRef<HTMLButtonElement>(null);
+  const foldersRef = useRef<HTMLDivElement>(null);
   const [selectedFolder, setSelectedFolder] = useState<string>("all");
   const [selectedMethod, setSelectedMethod] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<"all" | "passed" | "failed">("all");
   const [viewMode, setViewMode] = useState<"cards" | "compact">("cards");
+  const [folderEdges, setFolderEdges] = useState({ atStart: true, atEnd: true });
 
   useEffect(() => {
     backButtonRef.current?.focus();
@@ -33,448 +123,366 @@ export function Drawer({ collection, result, loading, onClose }: DrawerProps) {
         onClose();
       }
     };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    globalThis.addEventListener("keydown", handleKeyDown);
+    return () => globalThis.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
-  const folders = useMemo(() => {
-    if (!result?.executions) return [];
-    const set = new Set<string>();
-    result.executions.forEach((e) => {
-      if (e.folder) set.add(e.folder);
-    });
-    return Array.from(set);
-  }, [result]);
+  const folders = useMemo(() => collectFolders(result?.executions ?? []), [result]);
 
   const filteredExecutions = useMemo(() => {
     if (!result?.executions) return [];
-    const query = searchQuery.trim().toLowerCase();
-    const filtered = result.executions.filter((e) => {
-      const matchFolder = selectedFolder === "all" || e.folder === selectedFolder;
-      const matchMethod = selectedMethod === "all" || e.method.toUpperCase() === selectedMethod;
-      const matchStatus = statusFilter === "all" || (statusFilter === "failed" ? e.failed : !e.failed);
-      const matchQuery = !query || `${e.name} ${e.url} ${e.method} ${e.folder ?? ""}`.toLowerCase().includes(query);
-      return matchFolder && matchMethod && matchStatus && matchQuery;
+    const filtered = filterExecutions(result.executions, {
+      folder: selectedFolder,
+      method: selectedMethod,
+      status: statusFilter,
+      query: searchQuery.trim().toLowerCase(),
     });
-
-    if (selectedFolder !== "all") {
-      return filtered;
-    }
-
-    const folderBuckets = new Map<string, typeof filtered>();
-    for (const folder of folders) {
-      folderBuckets.set(folder, []);
-    }
-    const rootRequests: typeof filtered = [];
-
-    for (const execution of filtered) {
-      if (execution.folder && folderBuckets.has(execution.folder)) {
-        folderBuckets.get(execution.folder)!.push(execution);
-      } else {
-        rootRequests.push(execution);
-      }
-    }
-
-    const grouped: typeof filtered = [];
-    for (const folder of folders) {
-      grouped.push(...(folderBuckets.get(folder) ?? []));
-    }
-    grouped.push(...rootRequests);
-
-    return grouped;
+    return selectedFolder === "all" ? groupByFolder(filtered, folders) : filtered;
   }, [result, selectedFolder, selectedMethod, statusFilter, searchQuery, folders]);
+
+  const syncFolderEdges = useCallback(() => {
+    const el = foldersRef.current;
+    if (!el) return;
+    setFolderEdges({
+      atStart: el.scrollLeft <= 2,
+      atEnd: el.scrollLeft + el.clientWidth >= el.scrollWidth - 2,
+    });
+  }, []);
+
+  useEffect(() => {
+    syncFolderEdges();
+    globalThis.addEventListener("resize", syncFolderEdges);
+    return () => globalThis.removeEventListener("resize", syncFolderEdges);
+  }, [folders, syncFolderEdges]);
+
+  const scrollFolders = (direction: 1 | -1) => {
+    const el = foldersRef.current;
+    if (!el) return;
+    el.scrollBy?.({ left: direction * el.clientWidth * 0.7, behavior: "smooth" });
+  };
+
+  const goToTop = () => {
+    globalThis.scrollTo({ top: 0, behavior: "smooth" });
+    backButtonRef.current?.focus({ preventScroll: true });
+  };
 
   const openHtmlReport = () => {
     window.open(apiUrl(`/api/collections/${collection.id}/report`), "_blank", "noopener,noreferrer");
   };
 
-  const totalReqs = result?.stats.requests.total ?? collection.apiCount;
-  const failedReqs = result?.stats.requests.failed ?? 0;
-  const passedReqs = totalReqs > 0 ? totalReqs - failedReqs : 0;
-  const avgLatency = result?.stats.averageResponseTimeMs ?? (totalReqs > 0 ? 42 : 0);
+  const {
+    executions, totalReqs, failedReqs, passedReqs, avgLatency, assertionTotal,
+    assertionPassed, latencies, failedExecutions, failedFolderCount, passedCount,
+  } = summarizeRun(collection, result);
+  const folderHasFailures = (folder: string) => executions.some((e) => e.folder === folder && e.failed);
+
+  const showFailures = () => {
+    setStatusFilter("failed");
+    setSelectedFolder("all");
+  };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex flex-col bg-white overflow-hidden w-screen h-screen"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="modal-title"
-    >
-      <div className="relative flex h-full w-full flex-col overflow-hidden bg-white">
-        {/* Modal Top Header */}
-        <div className="flex flex-col gap-3 border-b border-slate-200 bg-white px-6 py-4 text-slate-900 sm:flex-row sm:items-center sm:justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            <button
-              ref={backButtonRef}
-              type="button"
-              onClick={onClose}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-100 hover:text-slate-900 active:bg-slate-200 transition mr-1"
-              title="Back to previous page / Dashboard"
-            >
-              <svg className="h-4 w-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-              <span>Back</span>
-            </button>
-            <div className="flex items-center gap-2.5">
-              <h2 id="modal-title" className="text-xl font-bold tracking-tight text-slate-900">
-                {collection.folderName}
-              </h2>
-              <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold capitalize border ${collection.status === "passed" ? "bg-emerald-100 text-emerald-800 border-emerald-200" : "bg-rose-100 text-rose-800 border-rose-200"
-                }`}>
-                <span className={`h-1.5 w-1.5 rounded-full ${collection.status === "passed" ? "bg-emerald-600" : "bg-rose-600"}`} />
-                {collection.status}
+    <main aria-labelledby="run-title">
+      <div className="detail-shell">
+        <header className="topbar detail">
+          <button
+            ref={backButtonRef}
+            type="button"
+            onClick={onClose}
+            className="icon-btn hd-back"
+            aria-label="Back to collections"
+            title="Back to collections"
+          >
+            <Icon name="arrowLeft" />
+          </button>
+          <div className="hd-main">
+            <div className="hd-row">
+              <h2 id="run-title" className="app-title">{collection.folderName}</h2>
+              <StatusBadge status={collection.status} />
+            </div>
+            <div className="hd-meta">
+              <span className="chip mono trunc" title={collection.collectionFile}>
+                <Icon name="file" size={13} />
+                <span className="t">{collection.collectionFile}</span>
+              </span>
+              {collection.environmentFile && (
+                <span className="chip mono trunc" title={collection.environmentFile}>
+                  <Icon name="globe" size={13} />
+                  <span className="t">{shortEnvironment(collection.environmentFile)}</span>
+                </span>
+              )}
+              <span className="lastrun">
+                <Icon name="clock" size={14} />
+                {collection.lastRunAt ? formatLastRun(collection.lastRunAt) : "Never run"}
+                {collection.lastRunAt && collection.durationMs !== null && `, took ${formatDuration(collection.durationMs)}`}
               </span>
             </div>
           </div>
-
-          <div className="flex items-center gap-2.5">
-            <button
-              type="button"
-              onClick={openHtmlReport}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 active:bg-slate-100 transition"
-              title="Open full Newman HTML report"
-            >
-              <svg className="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-              </svg>
-              View Newman Report
+          <div className="head-actions">
+            <button type="button" className="btn" onClick={openHtmlReport} title="Open full Newman HTML report">
+              <Icon name="external" />
+              <span className="lbl">View Newman report</span>
             </button>
           </div>
-        </div>
+        </header>
 
-        {/* Compact KPI Statistics Ribbon */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 border-b border-slate-200 bg-slate-50/70 px-6 py-2.5 text-xs shrink-0">
-          <div className="flex items-center justify-between rounded-lg bg-white px-3 py-2 border border-slate-200 shadow-2xs">
-            <span className="font-medium text-slate-500">Total Endpoints:</span>
-            <span className="text-sm font-bold text-slate-900">{totalReqs}</span>
-          </div>
-          <div className="flex items-center justify-between rounded-lg bg-white px-3 py-2 border border-slate-200 shadow-2xs">
-            <span className="font-medium text-slate-500">Passed Requests:</span>
-            <span className="text-sm font-bold text-emerald-800">{totalReqs > 0 ? `${passedReqs} / ${totalReqs}` : "0"}</span>
-          </div>
-          <div className="flex items-center justify-between rounded-lg bg-white px-3 py-2 border border-slate-200 shadow-2xs">
-            <span className="font-medium text-slate-500">Failed Requests:</span>
-            <span className={`text-sm font-bold ${failedReqs > 0 ? "text-rose-700" : "text-slate-900"}`}>{failedReqs}</span>
-          </div>
-          <div className="flex items-center justify-between rounded-lg bg-white px-3 py-2 border border-slate-200 shadow-2xs">
-            <span className="font-medium text-slate-500">Avg Response Time:</span>
-            <span className="text-sm font-bold text-slate-900">{totalReqs > 0 ? `${avgLatency} ms` : "—"}</span>
-          </div>
-        </div>
+        <div className="detail-scroll">
+          <div className="page">
+            <div style={{ height: 24 }} />
 
-        {/* Search, Filter & View Controls */}
-        <div className="border-b border-slate-200 bg-white px-6 py-2.5 space-y-2 shrink-0">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <div className="relative flex-1">
-              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
+            {error && <div role="alert" className="alert" style={{ marginBottom: 20 }}>{error}</div>}
+
+            {failedReqs > 0 && (
+              <div className="banner">
+                <Icon name="alert" size={20} />
+                <div>
+                  <b>{failedReqs} {failedReqs === 1 ? "request" : "requests"} failed</b>
+                  {result && ` in ${failedFolderCount} ${failedFolderCount === 1 ? "folder" : "folders"}, with ${formatNumber(assertionTotal - assertionPassed)} assertions not passing.`}
+                </div>
+                <button type="button" className="btn btn-sm" onClick={showFailures}>Show failures</button>
               </div>
-              <input
-                type="search"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search"
-                className="w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3.5 py-1.5 text-xs text-slate-900 placeholder-slate-400 focus:border-slate-500 focus:outline-none"
-              />
-            </div>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 focus:border-slate-500 focus:outline-none"
-            >
-              <option value="all">All Results ({result?.executions.length ?? 0})</option>
-              <option value="passed">Passed Only</option>
-              <option value="failed">Failed Only</option>
-            </select>
-            <select
-              value={selectedMethod}
-              onChange={(e) => setSelectedMethod(e.target.value)}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 focus:border-slate-500 focus:outline-none"
-            >
-              <option value="all">All HTTP Methods</option>
-              <option value="GET">GET</option>
-              <option value="POST">POST</option>
-              <option value="PUT">PUT</option>
-              <option value="PATCH">PATCH</option>
-              <option value="DELETE">DELETE</option>
-            </select>
-            <div className="flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-xs">
-              <button
-                type="button"
-                onClick={() => setViewMode("cards")}
-                className={`rounded-md px-2.5 py-1 font-bold transition ${viewMode === "cards" ? "bg-white text-slate-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
-                  }`}
-                title="Detailed Cards View"
-              >
-                Cards
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode("compact")}
-                className={`rounded-md px-2.5 py-1 font-bold transition ${viewMode === "compact" ? "bg-white text-slate-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
-                  }`}
-                title="Dense Table View"
-              >
-                Table
-              </button>
-            </div>
-          </div>
+            )}
 
-          {/* Horizontally Scrollable Folder Tabs */}
-          {folders.length > 0 && (
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 no-scrollbar">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 shrink-0 mr-1">
-                Folder:
-              </span>
-              <button
-                type="button"
-                onClick={() => setSelectedFolder("all")}
-                className={`rounded-lg px-3 py-1 text-xs font-bold shrink-0 transition ${selectedFolder === "all"
-                    ? "bg-slate-900 text-white shadow-xs"
-                    : "bg-slate-100 border border-slate-200 text-slate-700 hover:bg-slate-200"
-                  }`}
-              >
-                All ({result?.executions.length ?? 0})
-              </button>
-              {folders.map((folder) => {
-                const count = result?.executions.filter((e) => e.folder === folder).length ?? 0;
-                return (
-                  <button
-                    key={folder}
-                    type="button"
-                    onClick={() => setSelectedFolder(folder)}
-                    className={`rounded-lg px-3 py-1 text-xs font-medium shrink-0 transition ${selectedFolder === folder
-                        ? "bg-slate-900 text-white font-bold shadow-xs"
-                        : "bg-slate-100 border border-slate-200 text-slate-700 hover:bg-slate-200"
-                      }`}
-                  >
-                    {folder} <span className="opacity-75 font-mono">({count})</span>
+            <div className="stats">
+              <div className="stat">
+                <div className="stat-label"><span className="stat-ic acc"><Icon name="zap" size={15} /></span>Total endpoints</div>
+                <div className="stat-val">{formatNumber(totalReqs)}</div>
+                <div className="stat-meta">{folders.length} {folders.length === 1 ? "folder" : "folders"}</div>
+              </div>
+              <div className="stat">
+                <div className="stat-label"><span className="stat-ic pass"><Icon name="check" size={15} /></span>Passed requests</div>
+                <div className="stat-val pass">
+                  {formatNumber(passedReqs)} {totalReqs > 0 && <small>/ {formatNumber(totalReqs)}</small>}
+                </div>
+                <div className="stat-meta">{percent(passedReqs, totalReqs)}% pass rate</div>
+                <SplitBar passed={passedReqs} total={totalReqs} />
+              </div>
+              <div className="stat">
+                <div className="stat-label"><span className="stat-ic fail"><Icon name="x" size={15} /></span>Failed requests</div>
+                <div className={`stat-val${failedReqs > 0 ? " fail" : ""}`}>{formatNumber(failedReqs)}</div>
+                <div className="stat-meta">{failedReqs > 0 ? "Needs attention" : "Nothing to fix"}</div>
+              </div>
+              <div className="stat">
+                <div className="stat-label"><span className="stat-ic info"><Icon name="okCircle" size={15} /></span>Assertions passed</div>
+                <div className="stat-val">
+                  {formatNumber(assertionPassed)} <small>/ {formatNumber(assertionTotal)}</small>
+                </div>
+                <div className="stat-meta">{percent(assertionPassed, assertionTotal)}% passing</div>
+                <SplitBar passed={assertionPassed} total={assertionTotal} />
+              </div>
+              <div className="stat">
+                <div className="stat-label"><span className="stat-ic"><Icon name="clock" size={15} /></span>Avg response time</div>
+                <div className="stat-val">
+                  {totalReqs > 0 ? <>{avgLatency} <small>ms</small></> : "—"}
+                </div>
+                <div className="stat-meta">{latencies.length > 0 ? `Slowest ${Math.max(...latencies)} ms` : "No timings yet"}</div>
+              </div>
+            </div>
+
+            {folders.length > 0 && (
+              <nav className="tab-frame f-frame" aria-label="Folders">
+                {!(folderEdges.atStart && folderEdges.atEnd) && (
+                  <button type="button" className="fscroll" disabled={folderEdges.atStart} onClick={() => scrollFolders(-1)} aria-label="Scroll folders left">
+                    <Icon name="chevLeft" size={16} />
                   </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Endpoint List Body */}
-        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 space-y-3 bg-slate-100/70">
-          {loading && (
-            <div className="flex flex-col items-center justify-center py-20 text-slate-500">
-              <svg className="h-10 w-10 animate-spin text-cyan-600" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-              </svg>
-              <p className="mt-3 text-sm font-semibold text-slate-700">Loading collection endpoints…</p>
-            </div>
-          )}
-
-          {!loading && !result && (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center text-slate-500">
-              <p className="font-bold text-slate-800 text-base">No execution data available yet</p>
-              <p className="mt-1 text-xs">Run this collection to view endpoint metrics and live assertions.</p>
-            </div>
-          )}
-
-          {!loading && result && filteredExecutions.length === 0 && (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center text-slate-500">
-              <p className="font-bold text-slate-800 text-base">
-                {result.executions.length === 0 ? "No endpoints configured" : "No matching endpoints found"}
-              </p>
-              <p className="mt-1 text-xs">
-                {result.executions.length === 0 ? "This collection currently has no API endpoints." : "Try clearing or adjusting your search filters above."}
-              </p>
-            </div>
-          )}
-
-          {/* Detailed Cards View (3 Cards per Row) */}
-          {!loading && result && filteredExecutions.length > 0 && viewMode === "cards" && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 items-stretch">
-              {filteredExecutions.map((execution, index) => {
-                const methodClass = methodBadgeStyles[execution.method.toUpperCase()] || "bg-slate-800 text-white";
-                const isSuccessCode = execution.statusCode && execution.statusCode >= 200 && execution.statusCode < 300;
-
-                return (
-                  <div
-                    key={`${execution.name}-${index}`}
-                    className={`flex flex-col justify-between rounded-xl border bg-white p-3.5 shadow-xs transition hover:shadow-md ${execution.failed ? "border-rose-300 bg-rose-50/30" : "border-slate-200 hover:border-slate-300"
-                      }`}
+                )}
+                <div className="folders" ref={foldersRef} onScroll={syncFolderEdges}>
+                  <button
+                    type="button"
+                    className={`fchip${selectedFolder === "all" ? " on" : ""}`}
+                    onClick={() => setSelectedFolder("all")}
                   >
-                    <div>
-                      {/* Top Row: Method Badge, Status Code & Status Tag */}
-                      <div className="flex items-center justify-between gap-1.5">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span className={`rounded-md px-2 py-0.5 font-mono text-[11px] font-bold shrink-0 ${methodClass}`}>
-                            {execution.method}
-                          </span>
-                          <span
-                            className={`rounded-md px-2 py-0.5 font-mono text-[11px] font-bold border shrink-0 ${isSuccessCode
-                                ? "bg-slate-50 text-slate-800 border-slate-200"
-                                : "bg-rose-50 text-rose-800 border-rose-300"
-                              }`}
-                          >
-                            {execution.statusCode !== null ? `HTTP ${execution.statusCode}` : "No response"}
-                          </span>
-                        </div>
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold capitalize border shrink-0 ${execution.failed
-                              ? "bg-rose-100 text-rose-800 border-rose-200"
-                              : "bg-emerald-100 text-emerald-800 border-emerald-200"
-                            }`}
-                        >
-                          <span className={`h-1.5 w-1.5 rounded-full ${execution.failed ? "bg-rose-600" : "bg-emerald-600"}`} />
-                          {execution.failed ? "failed" : "passed"}
-                        </span>
-                      </div>
-
-                      {/* Endpoint Title */}
-                      <h3 className="mt-2 font-bold text-slate-900 text-sm leading-snug" title={execution.name}>
-                        {execution.name}
-                      </h3>
-
-                      {/* Folder Path & URL */}
-                      <div className="mt-2 flex flex-col gap-1 text-xs">
-                        {execution.folder && (
-                          <div className="flex items-center gap-1.5 text-slate-600 min-w-0">
-                            <svg className="h-3.5 w-3.5 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                            </svg>
-                            <span className="truncate font-medium text-[11px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
-                              {execution.folder}
-                            </span>
-                          </div>
-                        )}
-                        {execution.url && (
-                          <div className="truncate font-mono text-slate-400 text-[10px]" title={execution.url}>
-                            {execution.url}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Metrics Row: Latency, Payload, Assertions */}
-                      <div className="mt-2.5 grid grid-cols-3 gap-1 rounded-lg bg-slate-50 p-2 text-center text-xs border border-slate-100 text-slate-700">
-                        <div className="flex flex-col">
-                          <span className="text-slate-400 text-[10px] font-medium">Latency</span>
-                          <span className="font-bold text-slate-900 text-[11px]">{formatDuration(execution.responseTimeMs)}</span>
-                        </div>
-                        <div className="flex flex-col border-x border-slate-200/80">
-                          <span className="text-slate-400 text-[10px] font-medium">Payload</span>
-                          <span className="font-bold text-slate-900 text-[11px]">{formatSize(execution.responseSize)}</span>
-                        </div>
-                        <div className="flex flex-col">
-                          <span className="text-slate-400 text-[10px] font-medium">Assertions</span>
-                          <span className={`font-bold text-[11px] ${execution.failed ? "text-rose-700" : "text-emerald-800"}`}>
-                            {execution.assertions.filter((a) => a.passed).length}/{execution.assertions.length} Passed
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Assertion Checklist */}
-                    {execution.assertions.length > 0 && (
-                      <div className="mt-2.5 flex-1 rounded-lg bg-slate-50/80 border border-slate-200 p-2.5">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-                          Verified Test Assertions
-                        </p>
-                        <ul className="space-y-1 text-xs">
-                          {execution.assertions.map((assertion, assertionIndex) => (
-                            <li
-                              key={`${assertion.name}-${assertionIndex}`}
-                              className={`flex flex-col gap-0.5 rounded-md p-1.5 text-[11px] ${assertion.passed
-                                  ? "text-slate-800"
-                                  : "bg-rose-50 border border-rose-200 text-rose-950 font-medium"
-                                }`}
-                            >
-                              <div className="flex items-start gap-1.5">
-                                <span className={`flex h-3.5 w-3.5 items-center justify-center rounded-full text-[9px] font-bold text-white shrink-0 mt-0.5 ${assertion.passed ? "bg-emerald-600" : "bg-rose-600"
-                                  }`}>
-                                  {assertion.passed ? "✓" : "✕"}
-                                </span>
-                                <span className="leading-tight">{assertion.name}</span>
-                              </div>
-                              {assertion.errorMessage && (
-                                <p className="pl-5 font-mono text-[10px] text-rose-700 leading-tight break-all">
-                                  Assertion Error: {assertion.errorMessage}
-                                </p>
-                              )}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Dense Table View */}
-          {!loading && result && filteredExecutions.length > 0 && viewMode === "compact" && (
-            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-xs">
-              <table className="min-w-full text-left text-xs">
-                <thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                  <tr>
-                    <th className="w-14 px-4 py-3 text-center">S.No</th>
-                    <th className="px-4 py-3">Method</th>
-                    <th className="px-4 py-3">Endpoint Name & Folder</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Latency</th>
-                    <th className="px-4 py-3">Size</th>
-                    <th className="px-4 py-3">Assertions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredExecutions.map((execution, index) => {
-                    const methodClass = methodBadgeStyles[execution.method.toUpperCase()] || "bg-slate-800 text-white";
+                    All folders <span className="fc">{executions.length}</span>
+                  </button>
+                  {folders.map((folder) => {
+                    const count = executions.filter((e) => e.folder === folder).length;
                     return (
-                      <tr key={`${execution.name}-${index}`} className={`hover:bg-slate-50 ${execution.failed ? "bg-rose-50/30" : ""}`}>
-                        <td className="w-14 px-4 py-2.5 text-center font-medium text-slate-500">{index + 1}</td>
-                        <td className="px-4 py-2.5">
-                          <span className={`rounded px-2 py-0.5 font-mono text-[11px] ${methodClass}`}>
-                            {execution.method}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2.5">
-                          <p className="font-bold text-slate-900">{execution.name}</p>
-                          <p className="text-[11px] text-slate-500 font-mono">{execution.folder ?? "Root"}</p>
-                        </td>
-                        <td className="px-4 py-2.5">
-                          <span className={`inline-flex rounded px-2 py-0.5 font-mono text-[11px] font-bold ${execution.failed
-                              ? "bg-rose-100 text-rose-800 border border-rose-200"
-                              : "bg-emerald-100 text-emerald-800"
-                            }`}>
-                            {execution.statusCode !== null ? `HTTP ${execution.statusCode}` : "No response"}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2.5 font-bold text-slate-800">
-                          {formatDuration(execution.responseTimeMs)}
-                        </td>
-                        <td className="px-4 py-2.5 font-mono text-slate-600">
-                          {formatSize(execution.responseSize)}
-                        </td>
-                        <td className="px-4 py-2.5">
-                          <span className={`font-bold ${execution.failed ? "text-rose-700" : "text-emerald-800"}`}>
-                            {execution.assertions.filter((a) => a.passed).length}/{execution.assertions.length} Passed
-                          </span>
-                        </td>
-                      </tr>
+                      <button
+                        key={folder}
+                        type="button"
+                        className={`fchip${selectedFolder === folder ? " on" : ""}`}
+                        onClick={() => setSelectedFolder(folder)}
+                      >
+                        {folder}
+                        {folderHasFailures(folder) && <span className="fd" title="Has failures" />}
+                        <span className="fc">{count}</span>
+                      </button>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+                </div>
+                {!(folderEdges.atStart && folderEdges.atEnd) && (
+                  <button type="button" className="fscroll" disabled={folderEdges.atEnd} onClick={() => scrollFolders(1)} aria-label="Scroll folders right">
+                    <Icon name="chevRight" size={16} />
+                  </button>
+                )}
+              </nav>
+            )}
 
-        {/* Modal Footer */}
-        <div className="flex items-center justify-between border-t border-slate-200 bg-white px-6 py-3 text-xs text-slate-600 shrink-0">
-          <span className="font-medium">
-            Showing <strong className="text-slate-900">{filteredExecutions.length}</strong> of <strong className="text-slate-900">{result?.executions.length ?? 0}</strong> endpoints
-          </span>
+            <section className="card overflow-hidden">
+              <div className="ep-toolbar">
+                <label className="search">
+                  <Icon name="search" size={16} />
+                  <input
+                    type="search"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search endpoint name or URL"
+                    aria-label="Search endpoints"
+                  />
+                </label>
+                <div className="sel">
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+                    aria-label="Filter by result"
+                  >
+                    <option value="all">All results ({executions.length})</option>
+                    <option value="passed">Passed ({passedCount})</option>
+                    <option value="failed">Failed ({failedExecutions.length})</option>
+                  </select>
+                  <Icon name="chevDown" size={16} />
+                </div>
+                <div className="sel">
+                  <select value={selectedMethod} onChange={(e) => setSelectedMethod(e.target.value)} aria-label="Filter by HTTP method">
+                    <option value="all">All HTTP methods</option>
+                    {METHODS.map((method) => (
+                      <option key={method} value={method}>{method}</option>
+                    ))}
+                  </select>
+                  <Icon name="chevDown" size={16} />
+                </div>
+                <span className="spacer" />
+                <fieldset className="seg" aria-label="View">
+                  <button type="button" className={viewMode === "cards" ? "on" : ""} onClick={() => setViewMode("cards")} title="Detailed cards view">
+                    <Icon name="grid" size={16} />
+                    Cards
+                  </button>
+                  <button type="button" className={viewMode === "compact" ? "on" : ""} onClick={() => setViewMode("compact")} title="Dense table view">
+                    <Icon name="list" size={16} />
+                    Table
+                  </button>
+                </fieldset>
+              </div>
+
+              <div className={`ep-body${!loading && result && filteredExecutions.length > 0 && viewMode === "compact" ? " flush" : ""}`}>
+                {loading && (
+                  <div className="loading">
+                    <Icon name="loader" size={28} className="spin" />
+                    Loading collection endpoints…
+                  </div>
+                )}
+
+                {!loading && !result && (
+                  <div className="empty">
+                    <Icon name="search" size={28} />
+                    <h3>No execution data available yet</h3>
+                    <p>Run this collection to view endpoint metrics and live assertions.</p>
+                  </div>
+                )}
+
+                {!loading && result && filteredExecutions.length === 0 && (
+                  <NoEndpoints configured={result.executions.length > 0} />
+                )}
+
+                {!loading && result && filteredExecutions.length > 0 && viewMode === "cards" && (
+                  <div className="ep-grid">
+                    {filteredExecutions.map((execution, index) => (
+                      <article key={`${execution.name}-${index}`} className={`ep${execution.failed ? " is-fail" : ""}`}>
+                        <div className="ep-top">
+                          <MethodTag method={execution.method} />
+                          <CodeTag execution={execution} prefix="HTTP " />
+                          <span className="spacer" />
+                          <ResultBadge failed={execution.failed} />
+                        </div>
+                        <h3 className="ep-name">{execution.name}</h3>
+                        {execution.url && <div className="ep-url mono" title={execution.url}>{execution.url}</div>}
+                        {execution.folder && (
+                          <div className="ep-folder"><Icon name="folder" size={14} /><span>{execution.folder}</span></div>
+                        )}
+                        <div className="metrics">
+                          <div><span>Latency</span><b>{formatDuration(execution.responseTimeMs)}</b></div>
+                          <div><span>Payload</span><b>{formatSize(execution.responseSize)}</b></div>
+                          <div>
+                            <span>Assertions</span>
+                            <b className={execution.failed ? "bad" : "ok"}>{passedAssertions(execution)}/{execution.assertions.length}</b>
+                          </div>
+                        </div>
+                        {execution.assertions.length > 0 && (
+                          <ul className="asserts">
+                            {execution.assertions.map((assertion, assertionIndex) => (
+                              <li key={`${assertion.name}-${assertionIndex}`} className={assertion.passed ? "ok" : "no"}>
+                                <Icon name={assertion.passed ? "okCircle" : "noCircle"} size={17} />
+                                <span>
+                                  {assertion.name}
+                                  {assertion.errorMessage && <span className="msg">{assertion.errorMessage}</span>}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </article>
+                    ))}
+                  </div>
+                )}
+
+                {!loading && result && filteredExecutions.length > 0 && viewMode === "compact" && (
+                  <div className="table-scroll">
+                    <table className="tbl ep-tbl">
+                      <thead>
+                        <tr>
+                          <th>Method</th>
+                          <th>Endpoint</th>
+                          <th>Folder</th>
+                          <th>Status</th>
+                          <th>Latency</th>
+                          <th>Payload</th>
+                          <th>Assertions</th>
+                          <th>Result</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredExecutions.map((execution, index) => (
+                          <tr key={`${execution.name}-${index}`}>
+                            <td><MethodTag method={execution.method} /></td>
+                            <td className="ep-cell">
+                              <div className="font-medium">{execution.name}</div>
+                              {execution.url && <div className="ep-url mono" title={execution.url}>{execution.url}</div>}
+                            </td>
+                            <td className="nowrap small text-slate-700">{execution.folder ?? "Root"}</td>
+                            <td><CodeTag execution={execution} prefix="" /></td>
+                            <td className="num nowrap">{formatDuration(execution.responseTimeMs)}</td>
+                            <td className="num nowrap">{formatSize(execution.responseSize)}</td>
+                            <td className="num">
+                              <span className={execution.failed ? "text-rose-600" : "text-emerald-600"}>{passedAssertions(execution)}</span>
+                              <span className="muted"> / {execution.assertions.length}</span>
+                            </td>
+                            <td><ResultBadge failed={execution.failed} /></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div className="ep-foot">
+                <span>
+                  Showing <b className="font-medium text-slate-900">{filteredExecutions.length}</b> of {formatNumber(executions.length)} endpoints
+                </span>
+              </div>
+            </section>
+
+            {filteredExecutions.length > 0 && (
+              <div className="to-top">
+                <button type="button" className="btn btn-success" onClick={goToTop}>
+                  <Icon name="arrowUp" size={16} />
+                  Go to top
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

@@ -7,8 +7,14 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Gate: nothing is built or deployed from a commit that adds a secret.
+  secrets:
+    name: Gitleaks Secret Scan
+    uses: ./.github/workflows/secret-scan.yml
+
   build-and-deploy:
-    runs-on: k8s-heb
+    needs: secrets
+    runs-on: arc-runner-mal
 
     permissions:
       contents: read
@@ -17,17 +23,56 @@ jobs:
       pull-requests: write
 
     steps:
+      # ---------------------------------------------------------------
+      # Checkout
+      # ---------------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ---------------------------------------------------------------
+      # 2. NODE.JS
+      # ---------------------------------------------------------------
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 22.23.4
           cache: "npm"
 
       - name: Install dependencies
         run: npm ci
+
+      # ---------------------------------------------------------------
+      # 3. NPM AUDIT
+      # ---------------------------------------------------------------
+      - name: Dependency Audit (npm audit)
+        continue-on-error: true
+        run: |
+          npm audit --omit=dev --json > "$RUNNER_TEMP/npm-audit.json" || true
+          npm audit --omit=dev --audit-level=high
+
+      - name: Upload npm audit Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-report
+          path: ${{ runner.temp }}/npm-audit.json
+          if-no-files-found: ignore
+
+      # ---------------------------------------------------------------
+      # 4. TEST + COVERAGE
+      # Runs only once the frontend defines a "test:coverage" script
+      # that writes coverage/lcov.info.
+      # ---------------------------------------------------------------
+      - name: Run Tests with Coverage
+        # Threads, not forks: ARC runner pods deny kill() on child processes (kill EACCES).
+        run: npm run test:coverage --if-present -- --pool=threads
+
+      # ---------------------------------------------------------------
+      # 5. BUILD
+      # ---------------------------------------------------------------
 
       - name: Build project
         env:
@@ -37,6 +82,133 @@ jobs:
           VITE_KEYCLOAK_CLIENT_ID: ${{ secrets.VITE_KEYCLOAK_CLIENT_ID }}
           VITE_KEYCLOAK_REDIRECT_URI: ${{ secrets.VITE_KEYCLOAK_REDIRECT_URI }}
         run: npm run build
+
+      # ---------------------------------------------------------------
+      # 6. SONARQUBE
+      # ---------------------------------------------------------------
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v6
+        with:
+          args: >-
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+      - name: Wait for SonarQube Quality Gate
+        uses: SonarSource/sonarqube-quality-gate-action@v1.2.0
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      # Checks coverage of the entire codebase and of the code changed
+      # in this push (SonarQube "new code"). Both must meet MIN_COVERAGE.
+      - name: Check Overall and New Code Coverage (SonarQube)
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          PROJECT_KEY: IUDXQA-Frontend
+          MIN_COVERAGE: 80
+        run: |
+          curl -sSf -H "Authorization: Bearer $SONAR_TOKEN" \
+            "$SONAR_HOST_URL/api/measures/component?component=$PROJECT_KEY&metricKeys=coverage,new_coverage" \
+            > "$RUNNER_TEMP/sonar-coverage.json"
+
+          node - "$RUNNER_TEMP/sonar-coverage.json" <<'JS'
+          const fs = require("fs");
+          const min = Number(process.env.MIN_COVERAGE);
+          const measures = JSON.parse(fs.readFileSync(process.argv[2], "utf8")).component.measures;
+          const find = (metric) => measures.find((m) => m.metric === metric);
+
+          const overallMeasure = find("coverage");
+          const overall = Number(overallMeasure?.value ?? 0);
+
+          const newMeasure = find("new_coverage");
+          const newValue = newMeasure?.period?.value ?? newMeasure?.periods?.[0]?.value;
+
+          let failed = false;
+
+          console.log(`Entire code coverage: ${overall}% (minimum: ${min}%)`);
+          if (overall < min) {
+            console.log(`::error::Entire code coverage ${overall}% is below ${min}% - FAILED`);
+            failed = true;
+          } else {
+            console.log("Entire code coverage check PASSED");
+          }
+
+          if (newValue === undefined) {
+            console.log("New code coverage: no new coverable lines in this push - SKIPPED");
+          } else {
+            const newCoverage = Number(newValue);
+            console.log(`New code coverage: ${newCoverage}% (minimum: ${min}%)`);
+            if (newCoverage < min) {
+              console.log(`::error::New code coverage ${newCoverage}% is below ${min}% - FAILED`);
+              failed = true;
+            } else {
+              console.log("New code coverage check PASSED");
+            }
+          }
+
+          process.exit(failed ? 1 : 0);
+          JS
+
+      # ---------------------------------------------------------------
+      # 7. SYFT - SBOM
+      # ---------------------------------------------------------------
+      - name: Install Syft
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
+            | sh -s -- -b "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Generate SBOM (Syft)
+        run: |
+          syft scan dir:. \
+            --exclude './dist/**' \
+            -o cyclonedx-json="$RUNNER_TEMP/sbom.cyclonedx.json" \
+            -o table
+
+      - name: Upload SBOM
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx
+          path: ${{ runner.temp }}/sbom.cyclonedx.json
+          if-no-files-found: ignore
+
+      # ---------------------------------------------------------------
+      # 8. GRYPE
+      # ---------------------------------------------------------------
+      - name: Install Grype
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
+            | sh -s -- -b "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Vulnerability Scan (Grype)
+        continue-on-error: true
+        run: |
+          grype "sbom:$RUNNER_TEMP/sbom.cyclonedx.json" \
+            -o json > "$RUNNER_TEMP/grype-report.json" || true
+
+          grype "sbom:$RUNNER_TEMP/sbom.cyclonedx.json" \
+            --only-fixed \
+            -o table \
+            --fail-on high
+
+      - name: Upload Grype Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: grype-report
+          path: ${{ runner.temp }}/grype-report.json
+          if-no-files-found: ignore
+
+      # ---------------------------------------------------------------
+      # 9. NETLIFY DEPLOY
+      # ---------------------------------------------------------------
 
       - name: Ensure Netlify SPA redirects & API proxy
         run: |

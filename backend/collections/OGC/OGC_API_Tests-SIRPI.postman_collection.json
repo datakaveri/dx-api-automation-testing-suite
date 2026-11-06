@@ -1068,7 +1068,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "// New run: clear values left from any previous run\r\npm.collectionVariables.unset(\"feature_resource_id\");\r\npm.environment.unset(\"feature_resource_id\");\r\npm.collectionVariables.unset(\"feature_item_name\");\r\npm.collectionVariables.unset(\"presigned_url\");\r\npm.collectionVariables.unset(\"s3_object_key_name\");\r\npm.collectionVariables.unset(\"feature_job_id\");\r\n\r\npm.test(\"Status code is 200\", function () {\r\n    pm.response.to.have.status(200);\r\n});\r\n\r\nconst body = pm.response.json();\r\nconst itemId = body.itemId || body.id || (body.result && body.result.itemId) || (body.result && body.result.id);\r\n\r\npm.test(\"Response gives the new catalog item id\", function () {\r\n    pm.expect(itemId).to.be.a(\"string\");\r\n});\r\n\r\npm.test(\"Item name is unique for this run\", function () {\r\n    pm.expect(body.result.itemName).to.match(/^qa-ogc-godavari-\\d+$/);\r\n});\r\n\r\npm.test(\"Item is registered on the OGC resource server\", function () {\r\n    pm.expect(body.result.resourceServers).to.have.property(\"OGC\");\r\n    pm.expect(body.result.resourceServers.OGC.data.status).to.eql(\"created\");\r\n});\r\n\r\nif (itemId) {\r\n    pm.collectionVariables.set(\"feature_resource_id\", itemId);\r\n    // Also in the environment: the backend's post-run S3 cleanup reads it from there\r\n    pm.environment.set(\"feature_resource_id\", itemId);\r\n    pm.collectionVariables.set(\"feature_item_name\", body.result.itemName);\r\n}\r\nconsole.log(\"Created item:\", itemId, \"-\", body.result && body.result.itemName);"
+                  "// New run: clear values left from any previous run\r\npm.collectionVariables.unset(\"feature_resource_id\");\r\npm.collectionVariables.unset(\"feature_item_name\");\r\npm.collectionVariables.unset(\"presigned_url\");\r\npm.collectionVariables.unset(\"s3_object_key_name\");\r\npm.collectionVariables.unset(\"feature_job_id\");\r\n\r\npm.test(\"Status code is 200\", function () {\r\n    pm.response.to.have.status(200);\r\n});\r\n\r\nconst body = pm.response.json();\r\nconst itemId = body.itemId || body.id || (body.result && body.result.itemId) || (body.result && body.result.id);\r\n\r\npm.test(\"Response gives the new catalog item id\", function () {\r\n    pm.expect(itemId).to.be.a(\"string\");\r\n});\r\n\r\npm.test(\"Item name is unique for this run\", function () {\r\n    pm.expect(body.result.itemName).to.match(/^qa-ogc-godavari-\\d+$/);\r\n});\r\n\r\npm.test(\"Item is registered on the OGC resource server\", function () {\r\n    pm.expect(body.result.resourceServers).to.have.property(\"OGC\");\r\n    pm.expect(body.result.resourceServers.OGC.data.status).to.eql(\"created\");\r\n});\r\n\r\nif (itemId) {\r\n    pm.collectionVariables.set(\"feature_resource_id\", itemId);\r\n    pm.collectionVariables.set(\"feature_item_name\", body.result.itemName);\r\n}\r\nconsole.log(\"Created item:\", itemId, \"-\", body.result && body.result.itemName);"
                 ]
               }
             }
@@ -1087,7 +1087,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\r\n    \"name\": \"qa-ogc-godavari-{{$timestamp}}\",\r\n    \"type\": [\r\n        \"adex:DataBank\"\r\n    ],\r\n    \"label\": \"Godavari Basin Boundary (QA)\",\r\n    \"shortDescription\": \"Boundary of the Godavari river basin – OGC feature onboarding QA dataset.\",\r\n    \"description\": \"Single multipolygon of the Godavari river basin from CDPG-At-IISc_Dataset_862026.gpkg, used to test OGC feature onboarding end to end.\",\r\n    \"tags\": [\r\n        \"godavari\",\r\n        \"basin\",\r\n        \"ogc-qa\"\r\n    ],\r\n    \"uploadedBy\": \"QA Team\",\r\n    \"accessPolicy\": \"OPEN\",\r\n    \"organizationId\": \"{{org_id}}\",\r\n    \"organizationType\": \"Public\",\r\n    \"fileFormat\": \"gpkg\",\r\n    \"dataReadiness\": 0,\r\n    \"department\": \"Department of IT, Electronics and Communication\",\r\n    \"resourceType\": \"DATASET\",\r\n    \"industry\": \"Water Resources\",\r\n    \"geoCoverage\": \"Godavari basin, India\",\r\n    \"yearRange\": \"2020-2024\",\r\n    \"verifiedBy\": \"QA Team\",\r\n    \"uploadFrequency\": \"OneTime\",\r\n    \"license\": \"CC-BY 4.0\",\r\n    \"resourceServer\": [\r\n        {\r\n            \"name\": \"OGC\",\r\n            \"type\": \"ogc\",\r\n            \"queryTypes\": [\r\n                \"FEATURE\"\r\n            ],\r\n            \"accessTypes\": [\r\n                \"api\"\r\n            ],\r\n            \"datasetType\": \"DATASET\",\r\n            \"url\": \"v2.dev.iudx.io/geoserver-s3\"\r\n        }\r\n    ],\r\n    \"dataSample\": {\r\n        \"ghi_bas_id\": \"x03\",\r\n        \"ghi_bas_na\": \"goda\"\r\n    },\r\n    \"dataDescriptor\": {\r\n        \"columns\": [\r\n            {\r\n                \"name\": \"ghi_bas_id\",\r\n                \"type\": \"string\"\r\n            },\r\n            {\r\n                \"name\": \"ghi_bas_na\",\r\n                \"type\": \"string\"\r\n            }\r\n        ],\r\n        \"formatVersion\": \"v1.0\"\r\n    }\r\n}",
+              "raw": "{\r\n    \"name\": \"qa-ogc-godavari-{{$timestamp}}\",\r\n    \"type\": [\r\n        \"adex:DataBank\"\r\n    ],\r\n    \"label\": \"Godavari Basin Boundary (QA)\",\r\n    \"shortDescription\": \"Boundary of the Godavari river basin – OGC feature onboarding QA dataset.\",\r\n    \"description\": \"Single multipolygon of the Godavari river basin from CDPG-At-IISc_Dataset_862026.gpkg, used to test OGC feature onboarding end to end.\",\r\n    \"tags\": [\r\n        \"godavari\",\r\n        \"basin\",\r\n        \"ogc-qa\"\r\n    ],\r\n    \"uploadedBy\": \"QA Team\",\r\n    \"accessPolicy\": \"OPEN\",\r\n    \"organizationId\": \"{{org_id}}\",\r\n    \"organizationType\": \"Public\",\r\n    \"fileFormat\": \"gpkg\",\r\n    \"dataReadiness\": 0.0,\r\n    \"department\": \"Department of IT, Electronics and Communication\",\r\n    \"resourceType\": \"DATASET\",\r\n    \"industry\": \"Water Resources\",\r\n    \"geoCoverage\": \"Godavari basin, India\",\r\n    \"yearRange\": \"2020-2024\",\r\n    \"verifiedBy\": \"QA Team\",\r\n    \"uploadFrequency\": \"OneTime\",\r\n    \"license\": \"CC-BY 4.0\",\r\n    \"resourceServer\": [\r\n        {\r\n            \"name\": \"OGC\",\r\n            \"type\": \"ogc\",\r\n            \"queryTypes\": [\r\n                \"FEATURE\"\r\n            ],\r\n            \"accessTypes\": [\r\n                \"api\"\r\n            ],\r\n            \"datasetType\": \"DATASET\",\r\n            \"url\": \"v2.dev.iudx.io/geoserver-s3\"\r\n        }\r\n    ],\r\n    \"dataSample\": {\r\n        \"ghi_bas_id\": \"x03\",\r\n        \"ghi_bas_na\": \"goda\"\r\n    },\r\n    \"dataDescriptor\": {\r\n        \"columns\": [\r\n            {\r\n                \"name\": \"ghi_bas_id\",\r\n                \"type\": \"string\"\r\n            },\r\n            {\r\n                \"name\": \"ghi_bas_na\",\r\n                \"type\": \"string\"\r\n            }\r\n        ],\r\n        \"formatVersion\": \"v1.0\"\r\n    }\r\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1115,7 +1115,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "// New run: clear values left from any previous run\r\npm.collectionVariables.unset(\"stac_collection_id\");\r\npm.environment.unset(\"stac_collection_id\");\r\npm.collectionVariables.unset(\"stac_catalog_item_name\");\r\npm.collectionVariables.unset(\"stac_item_id\");\r\n\r\npm.test(\"Status code is 200\", function () {\r\n    pm.response.to.have.status(200);\r\n});\r\n\r\nconst body = pm.response.json();\r\nconst itemId = body.itemId || body.id || (body.result && body.result.itemId) || (body.result && body.result.id);\r\n\r\npm.test(\"Response gives the new catalog item id\", function () {\r\n    pm.expect(itemId).to.be.a(\"string\");\r\n});\r\n\r\npm.test(\"Item name is unique for this run\", function () {\r\n    pm.expect(body.result.itemName).to.match(/^qa-ogc-stac-\\d+$/);\r\n});\r\n\r\npm.test(\"Item is registered on the OGC resource server\", function () {\r\n    pm.expect(body.result.resourceServers).to.have.property(\"OGC\");\r\n    pm.expect(body.result.resourceServers.OGC.data.status).to.eql(\"created\");\r\n});\r\n\r\n// The catalog item id becomes the STAC collection id\r\nif (itemId) {\r\n    pm.collectionVariables.set(\"stac_collection_id\", itemId);\r\n    // Also in the environment: the backend's post-run S3 cleanup reads it from there\r\n    pm.environment.set(\"stac_collection_id\", itemId);\r\n    pm.collectionVariables.set(\"stac_catalog_item_name\", body.result.itemName);\r\n}\r\nconsole.log(\"Created STAC catalog item:\", itemId, \"-\", body.result && body.result.itemName);"
+                  "// New run: clear values left from any previous run\r\npm.collectionVariables.unset(\"stac_collection_id\");\r\npm.collectionVariables.unset(\"stac_catalog_item_name\");\r\npm.collectionVariables.unset(\"stac_item_id\");\r\n\r\npm.test(\"Status code is 200\", function () {\r\n    pm.response.to.have.status(200);\r\n});\r\n\r\nconst body = pm.response.json();\r\nconst itemId = body.itemId || body.id || (body.result && body.result.itemId) || (body.result && body.result.id);\r\n\r\npm.test(\"Response gives the new catalog item id\", function () {\r\n    pm.expect(itemId).to.be.a(\"string\");\r\n});\r\n\r\npm.test(\"Item name is unique for this run\", function () {\r\n    pm.expect(body.result.itemName).to.match(/^qa-ogc-stac-\\d+$/);\r\n});\r\n\r\npm.test(\"Item is registered on the OGC resource server\", function () {\r\n    pm.expect(body.result.resourceServers).to.have.property(\"OGC\");\r\n    pm.expect(body.result.resourceServers.OGC.data.status).to.eql(\"created\");\r\n});\r\n\r\n// The catalog item id becomes the STAC collection id\r\nif (itemId) {\r\n    pm.collectionVariables.set(\"stac_collection_id\", itemId);\r\n    pm.collectionVariables.set(\"stac_catalog_item_name\", body.result.itemName);\r\n}\r\nconsole.log(\"Created STAC catalog item:\", itemId, \"-\", body.result && body.result.itemName);"
                 ]
               }
             }
@@ -1134,7 +1134,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\r\n  \"name\": \"qa-ogc-stac-{{$timestamp}}\",\r\n  \"type\": [\"adex:DataBank\"],\r\n  \"label\": \"QA STAC raster collection\",\r\n  \"shortDescription\": \"Boundary of the Godavari river basin – OGC stac onboarding QA dataset.\",\r\n  \"description\": \"QA test dataset for STAC raster onboarding\",\r\n  \"tags\": [\"godavari\", \"basin\", \"ogc-qa\"],\r\n  \"uploadedBy\": \"QA Team\",\r\n  \"accessPolicy\": \"OPEN\",\r\n  \"organizationId\": \"{{org_id}}\",\r\n  \"organizationType\": \"Public\",\r\n  \"fileFormat\": \"tif\",\r\n  \"dataReadiness\": 0,\r\n  \"department\": \"Department of IT, Electronics and Communication\",\r\n  \"resourceType\": \"DATASET\",\r\n  \"industry\": \"Water Resources\",\r\n  \"geoCoverage\": \"Godavari basin, India\",\r\n  \"yearRange\": \"2020-2024\",\r\n  \"verifiedBy\": \"QA Team\",\r\n  \"uploadFrequency\": \"OneTime\",\r\n  \"license\": \"CC-BY 4.0\",\r\n  \"resourceServer\": [\r\n    { \"name\": \"OGC\", \"type\": \"ogc\", \"queryTypes\": [\"STAC\"], \"accessTypes\": [\"api\"], \"datasetType\": \"DATASET\", \"url\": \"v2.dev.iudx.io/geoserver-s3\" }\r\n  ],\r\n  \"dataSample\": { \"ghi_bas_id\": \"x03\", \"ghi_bas_na\": \"goda\" },\r\n  \"dataDescriptor\": {\r\n    \"columns\": [\r\n      { \"name\": \"ghi_bas_id\", \"type\": \"string\" },\r\n      { \"name\": \"ghi_bas_na\", \"type\": \"string\" }\r\n    ],\r\n    \"formatVersion\": \"v1.0\"\r\n  }\r\n}",
+              "raw": "{\r\n  \"name\": \"qa-ogc-stac-{{$timestamp}}\",\r\n  \"type\": [\"adex:DataBank\"],\r\n  \"label\": \"QA STAC raster collection\",\r\n  \"shortDescription\": \"Boundary of the Godavari river basin – OGC stac onboarding QA dataset.\",\r\n  \"description\": \"QA test dataset for STAC raster onboarding\",\r\n  \"tags\": [\"godavari\", \"basin\", \"ogc-qa\"],\r\n  \"uploadedBy\": \"QA Team\",\r\n  \"accessPolicy\": \"OPEN\",\r\n  \"organizationId\": \"{{org_id}}\",\r\n  \"organizationType\": \"Public\",\r\n  \"fileFormat\": \"tif\",\r\n  \"dataReadiness\": 0.0,\r\n  \"department\": \"Department of IT, Electronics and Communication\",\r\n  \"resourceType\": \"DATASET\",\r\n  \"industry\": \"Water Resources\",\r\n  \"geoCoverage\": \"Godavari basin, India\",\r\n  \"yearRange\": \"2020-2024\",\r\n  \"verifiedBy\": \"QA Team\",\r\n  \"uploadFrequency\": \"OneTime\",\r\n  \"license\": \"CC-BY 4.0\",\r\n  \"resourceServer\": [\r\n    { \"name\": \"OGC\", \"type\": \"ogc\", \"queryTypes\": [\"STAC\"], \"accessTypes\": [\"api\"], \"datasetType\": \"DATASET\", \"url\": \"v2.dev.iudx.io/geoserver-s3\" }\r\n  ],\r\n  \"dataSample\": { \"ghi_bas_id\": \"x03\", \"ghi_bas_na\": \"goda\" },\r\n  \"dataDescriptor\": {\r\n    \"columns\": [\r\n      { \"name\": \"ghi_bas_id\", \"type\": \"string\" },\r\n      { \"name\": \"ghi_bas_na\", \"type\": \"string\" }\r\n    ],\r\n    \"formatVersion\": \"v1.0\"\r\n  }\r\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5396,31 +5396,31 @@
   "variable": [
     {
       "key": "provider_token",
-      "value": ""
+      "value": "${OGC_PROVIDER_TOKEN:-}"
     },
     {
       "key": "consumer_token",
-      "value": ""
+      "value": "${OGC_CONSUMER_TOKEN:-}"
     },
     {
       "key": "cosadmin_token",
-      "value": ""
+      "value": "${OGC_COSADMIN_TOKEN:-}"
     },
     {
       "key": "ogc_collection_id",
-      "value": ""
+      "value": "c68f65ea-16ed-4670-83ef-59ebc4195e99"
     },
     {
       "key": "record_catalog_id",
-      "value": ""
+      "value": "769b0aa1-08a5-459b-8ee2-3bd40d7b0b05"
     },
     {
       "key": "record_id",
-      "value": ""
+      "value": "3"
     },
     {
       "key": "tile_matrix_set_id",
-      "value": ""
+      "value": "WorldCRS84Quad"
     },
     {
       "key": "stac_existing_collection_id",
@@ -5435,104 +5435,112 @@
       "value": ""
     },
     {
-      "key": "feature_resource_id",
-      "value": ""
-    },
-    {
-      "key": "feature_item_name",
-      "value": ""
-    },
-    {
       "key": "stac_catalog_item_name",
-      "value": ""
+      "value": "qa-ogc-stac-1793858322"
     },
     {
       "key": "stac_collection_id",
-      "value": ""
+      "value": "cfff5396-c89e-4096-ae32-41e69661cbaf"
     },
     {
       "key": "stac_item_geometry",
-      "value": ""
+      "value": "{\"type\":\"Polygon\",\"coordinates\":[[[74.465717547,18.353234303],[75.431884243,18.353234303],[75.431884243,18.922547367],[74.465717547,18.922547367],[74.465717547,18.353234303]]]}"
     },
     {
       "key": "stac_item_bbox",
-      "value": ""
+      "value": "74.465717547,18.353234303,75.431884243,18.922547367"
     },
     {
       "key": "stac_item_datetime",
-      "value": ""
+      "value": "2026-07-16T00:00:00Z"
     },
     {
       "key": "stac_items_next_url",
-      "value": ""
+      "value": "https://v2.dev.iudx.io/geoserver-s3/stac/collections/cfff5396-c89e-4096-ae32-41e69661cbaf/items?offset=1505&limit=10"
     },
     {
       "key": "stac_bad_item_id",
-      "value": ""
+      "value": "qa-stac-bad-1791790224304"
     },
     {
       "key": "stac_bad_datetime",
-      "value": ""
+      "value": "2026-08-30T00:00:00Z"
     },
     {
       "key": "stac_bad_geometry",
-      "value": ""
+      "value": "{\"type\":\"Polygon\",\"coordinates\":[[[76.55265508,18.28207017],[77.55265508,18.28207017],[77.55265508,18.9937115],[76.55265508,18.9937115],[76.55265508,18.28207017]]]}"
     },
     {
       "key": "stac_bad_bbox",
-      "value": ""
+      "value": "76.55265508,18.28207017,77.55265508,18.9937115"
     },
     {
       "key": "stac_ready_checks",
-      "value": ""
+      "value": "2"
     },
     {
       "key": "stac_asset_s3_key",
-      "value": ""
+      "value": "cfff5396-c89e-4096-ae32-41e69661cbaf/qa-stac-item-1793858371/qa_stac_item_raster.tif"
     },
     {
       "key": "stac_asset_upload_id",
-      "value": ""
+      "value": "${OGC_STAC_ASSET_UPLOAD_ID:-}"
     },
     {
       "key": "stac_asset_part_url",
-      "value": ""
+      "value": "${OGC_STAC_ASSET_PART_URL:-}"
     },
     {
       "key": "stac_asset_id",
-      "value": ""
+      "value": "4a98e3d3-1822-4d18-a87b-361a906f83fa"
     },
     {
       "key": "records_total",
-      "value": ""
+      "value": 201
     },
     {
       "key": "append_count_before",
-      "value": ""
+      "value": 1
     },
     {
       "key": "org_admin_token",
-      "value": ""
-    },
-    {
-      "key": "presigned_url",
-      "value": ""
-    },
-    {
-      "key": "s3_object_key_name",
-      "value": ""
-    },
-    {
-      "key": "feature_job_id",
-      "value": ""
-    },
-    {
-      "key": "stac_item_id",
-      "value": ""
+      "value": "${OGC_ORG_ADMIN_TOKEN:-}"
     },
     {
       "key": "stac_asset_etag",
-      "value": ""
+      "value": "c37bfe5c714b2f4715c9378e3d0cc2c5"
+    },
+    {
+      "key": "aws_access_key_0wn9",
+      "secret": true
+    },
+    {
+      "key": "feature_resource_id",
+      "value": "c68f65ea-16ed-4670-83ef-59ebc4195e99"
+    },
+    {
+      "key": "feature_item_name",
+      "value": "qa-ogc-godavari-1793858322"
+    },
+    {
+      "key": "presigned_url",
+      "value": "${OGC_PRESIGNED_URL:-}"
+    },
+    {
+      "key": "s3_object_key_name",
+      "value": "c68f65ea-16ed-4670-83ef-59ebc4195e99.gpkg"
+    },
+    {
+      "key": "feature_job_id",
+      "value": "e3341814-9c43-4281-822a-fd4388678506"
+    },
+    {
+      "key": "stac_item_id",
+      "value": "qa-stac-item-1793858371"
+    },
+    {
+      "key": "aws_access_key_0wn9",
+      "secret": true
     }
   ]
 }
