@@ -14,7 +14,7 @@ export function initializeKeycloak(): Promise<boolean> {
   if (!keycloak) return initPromise;
   keycloak.onTokenExpired = () => {
     keycloak.updateToken(5).catch(() => {
-      void keycloak.logout({ redirectUri: globalThis.location.origin + import.meta.env.BASE_URL });
+      void keycloak.logout({ redirectUri: globalThis.location.origin });
     });
   };
   initPromise = keycloak.init({

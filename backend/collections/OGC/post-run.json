@@ -1,6 +1,6 @@
 {
   "export": {
-    "feature_resource_id": "environment.feature_resource_id"
+    "feature_resource_id": "collection.feature_resource_id"
   },
   "python": {
     "requirements": "requirements.txt"

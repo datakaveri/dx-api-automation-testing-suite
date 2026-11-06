@@ -19,14 +19,13 @@ export function isMatchingQaAdminRole(role: unknown): boolean {
 
   // Handle client-qualified role strings like "frontend-client:qa_admin"
   if (clean.includes(":")) {
-    const parts = clean.split(":");
-    const rolePart = parts[parts.length - 1]?.trim().toLowerCase();
+    const rolePart = clean.split(":").at(-1)?.trim();
     if (rolePart === QA_ADMIN_ROLE) return true;
   }
 
   // Handle slash-qualified role strings like "/qa_admin"
   if (clean.startsWith("/")) {
-    const stripped = clean.replace(/^\/+/, "").toLowerCase();
+    const stripped = clean.replace(/^\/+/, "");
     if (stripped === QA_ADMIN_ROLE) return true;
   }
 
@@ -71,67 +70,49 @@ export function extractRolesFromAccess(access: unknown): string[] {
  * Non-qa_admin roles (such as 'cos_admin', 'consumer', 'admin', 'realm-admin')
  * and arbitrary emails/usernames do NOT grant access.
  */
+function hasInstanceRole(
+  keycloakInstance: Keycloak | null | undefined,
+  resourceAccess: Record<string, unknown> | undefined,
+): boolean {
+  if (!keycloakInstance?.authenticated) return false;
+  if (typeof keycloakInstance.hasRealmRole === "function" && keycloakInstance.hasRealmRole(QA_ADMIN_ROLE)) {
+    return true;
+  }
+  if (typeof keycloakInstance.hasResourceRole !== "function") return false;
+  const clientNames = [undefined, ...Object.keys(resourceAccess ?? {})];
+  return clientNames.some((clientName) => keycloakInstance.hasResourceRole(QA_ADMIN_ROLE, clientName));
+}
+
+function listHasQaAdmin(roles: unknown): boolean {
+  return Array.isArray(roles) && roles.some(isMatchingQaAdminRole);
+}
+
+function clientsHaveQaAdmin(clients: unknown): boolean {
+  if (!clients || typeof clients !== "object") return false;
+  return Object.entries(clients).some(([clientName, access]) =>
+    extractRolesFromAccess(access).some(
+      (role) => isMatchingQaAdminRole(role) || isMatchingQaAdminRole(`${clientName}:${role}`),
+    ),
+  );
+}
+
 export function hasQaAdminRole(
   tokenParsed?: KeycloakTokenParsed | null,
   userRoles?: UserRoles | null,
   keycloakInstance?: Keycloak | null,
 ): boolean {
-  // 1. Check Keycloak instance methods if authenticated
-  if (keycloakInstance?.authenticated) {
-    if (
-      typeof keycloakInstance.hasRealmRole === "function" &&
-      keycloakInstance.hasRealmRole(QA_ADMIN_ROLE)
-    ) {
-      return true;
-    }
-    if (typeof keycloakInstance.hasResourceRole === "function") {
-      if (keycloakInstance.hasResourceRole(QA_ADMIN_ROLE)) return true;
-
-      const resourceAccess = tokenParsed?.resource_access as Record<string, unknown> | undefined;
-      if (resourceAccess && typeof resourceAccess === "object") {
-        for (const clientName of Object.keys(resourceAccess)) {
-          if (keycloakInstance.hasResourceRole(QA_ADMIN_ROLE, clientName)) {
-            return true;
-          }
-        }
-      }
-    }
-  }
-
-  // 2. Check Keycloak realm roles (userRoles.realm, tokenParsed.realm_access, direct tokenParsed.roles)
-  if (Array.isArray(userRoles?.realm) && userRoles.realm.some(isMatchingQaAdminRole)) {
-    return true;
-  }
-  const realmAccessRoles = tokenParsed?.realm_access?.roles;
-  if (Array.isArray(realmAccessRoles) && realmAccessRoles.some(isMatchingQaAdminRole)) {
-    return true;
-  }
-  const directRoles = (tokenParsed as { roles?: unknown })?.roles;
-  if (Array.isArray(directRoles) && directRoles.some(isMatchingQaAdminRole)) {
-    return true;
-  }
-
-  // 3. Check Keycloak client roles (userRoles.clients and tokenParsed.resource_access)
-  if (userRoles?.clients && typeof userRoles.clients === "object") {
-    for (const [clientName, access] of Object.entries(userRoles.clients)) {
-      const roles = extractRolesFromAccess(access);
-      if (roles.some((role) => isMatchingQaAdminRole(role) || isMatchingQaAdminRole(`${clientName}:${role}`))) {
-        return true;
-      }
-    }
-  }
-
   const resourceAccess = tokenParsed?.resource_access as Record<string, unknown> | undefined;
-  if (resourceAccess && typeof resourceAccess === "object") {
-    for (const [clientName, access] of Object.entries(resourceAccess)) {
-      const roles = extractRolesFromAccess(access);
-      if (roles.some((role) => isMatchingQaAdminRole(role) || isMatchingQaAdminRole(`${clientName}:${role}`))) {
-        return true;
-      }
-    }
-  }
-
-  return false;
+  return (
+    // 1. Keycloak instance methods
+    hasInstanceRole(keycloakInstance, resourceAccess) ||
+    // 2. Realm roles (userRoles.realm, tokenParsed.realm_access, direct tokenParsed.roles)
+    listHasQaAdmin(userRoles?.realm) ||
+    listHasQaAdmin(tokenParsed?.realm_access?.roles) ||
+    listHasQaAdmin((tokenParsed as { roles?: unknown } | null | undefined)?.roles) ||
+    // 3. Client roles (userRoles.clients and tokenParsed.resource_access)
+    clientsHaveQaAdmin(userRoles?.clients) ||
+    clientsHaveQaAdmin(resourceAccess)
+  );
 }
 
 /**
