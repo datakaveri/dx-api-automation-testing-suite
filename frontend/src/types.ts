@@ -131,8 +131,6 @@ export interface SkippedFile {
   reason: string;
 }
 
-export type SkippedRunReason = "collection_not_found" | "invalid_collection" | "already_running" | string;
-
 export interface SelectedRunQueuedItem {
   collectionId: string;
   runId: string;
@@ -142,7 +140,8 @@ export interface SelectedRunQueuedItem {
 
 export interface SelectedRunSkippedItem {
   collectionId: string;
-  reason: SkippedRunReason;
+  // Known values: "collection_not_found", "invalid_collection", "already_running"; the backend may add more.
+  reason: string;
 }
 
 export interface SelectedRunResponse {

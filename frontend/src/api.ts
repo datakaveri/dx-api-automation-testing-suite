@@ -17,13 +17,10 @@ const envApiUrl =
   typeof import.meta.env.VITE_API_BASE_URL === "string"
     ? import.meta.env.VITE_API_BASE_URL.trim()
     : "";
-const API_BASE_URL = (
-  envApiUrl.length > 0
-    ? envApiUrl
-    : import.meta.env.DEV
-      ? "http://localhost:4000"
-      : ""
-).replace(/\/$/, "");
+const defaultApiUrl = import.meta.env.DEV
+  ? "http://localhost:4000"
+  : "https://iudxqa-backend.slicearrow.com";
+const API_BASE_URL = (envApiUrl || defaultApiUrl).replace(/\/$/, "");
 
 export function apiUrl(path: string): string {
   return `${API_BASE_URL}${path}`;
@@ -48,44 +45,44 @@ export class ApiError extends Error {
   }
 }
 
-export function extractFieldErrors(error: unknown): Record<string, string[]> {
+function findFieldErrors(error: unknown): unknown {
+  if (typeof error !== "object" || error === null) return undefined;
+  const errObj = error as {
+    details?: { fieldErrors?: unknown };
+    error?: { details?: { fieldErrors?: unknown } };
+  };
+  return errObj.details?.fieldErrors ?? errObj.error?.details?.fieldErrors;
+}
+
+function fieldErrorsFromList(list: unknown[]): Record<string, string[]> {
   const result: Record<string, string[]> = {};
-  if (!error) return result;
-
-  let fieldErrors: unknown = undefined;
-  if (error instanceof ApiError && error.details?.fieldErrors) {
-    fieldErrors = error.details.fieldErrors;
-  } else if (typeof error === "object" && error !== null) {
-    const errObj = error as {
-      details?: { fieldErrors?: unknown };
-      error?: { details?: { fieldErrors?: unknown } };
-    };
-    fieldErrors =
-      errObj.details?.fieldErrors ?? errObj.error?.details?.fieldErrors;
-  }
-
-  if (!fieldErrors) return result;
-
-  if (Array.isArray(fieldErrors)) {
-    for (const item of fieldErrors) {
-      if (item && typeof item === "object" && "field" in item && "message" in item) {
-        const field = String((item as { field: string }).field);
-        const msg = String((item as { message: string }).message);
-        if (!result[field]) result[field] = [];
-        result[field].push(msg);
-      }
-    }
-  } else if (typeof fieldErrors === "object") {
-    for (const [key, value] of Object.entries(fieldErrors as Record<string, unknown>)) {
-      if (Array.isArray(value)) {
-        result[key] = value.map((v) => String(v));
-      } else if (typeof value === "string") {
-        result[key] = [value];
-      }
+  for (const item of list) {
+    if (item && typeof item === "object" && "field" in item && "message" in item) {
+      const field = String(item.field);
+      result[field] ??= [];
+      result[field].push(String(item.message));
     }
   }
-
   return result;
+}
+
+function fieldErrorsFromRecord(record: Record<string, unknown>): Record<string, string[]> {
+  const result: Record<string, string[]> = {};
+  for (const [key, value] of Object.entries(record)) {
+    if (Array.isArray(value)) {
+      result[key] = value.map(String);
+    } else if (typeof value === "string") {
+      result[key] = [value];
+    }
+  }
+  return result;
+}
+
+export function extractFieldErrors(error: unknown): Record<string, string[]> {
+  const fieldErrors = findFieldErrors(error);
+  if (Array.isArray(fieldErrors)) return fieldErrorsFromList(fieldErrors);
+  if (fieldErrors && typeof fieldErrors === "object") return fieldErrorsFromRecord(fieldErrors as Record<string, unknown>);
+  return {};
 }
 
 async function request<T>(
@@ -125,7 +122,7 @@ export async function openAuthenticatedReport(
     throw new Error("Please sign in to view this report.");
   if (!reportTab) throw new Error("Allow pop-ups to open the report.");
   await keycloak.updateToken(30);
-  const reportUrl = new URL(reportPath.replace(/^\/+/, ""), `${API_BASE_URL}/`);
+  const reportUrl = new URL(reportPath, `${API_BASE_URL}/`);
   if (reportUrl.origin !== new URL(API_BASE_URL).origin)
     throw new Error("The report URL is outside the configured API origin.");
   const response = await fetch(reportUrl, {

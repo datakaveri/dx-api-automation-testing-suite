@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ComponentProps, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
 import { Drawer } from "./Drawer";
 import { HistoryModal } from "./HistoryModal";
@@ -6,23 +6,74 @@ import { AutoRerunModal } from "./AutoRerunModal";
 import { ToastContainer } from "./Toast";
 import { LoginPage } from "./LoginPage";
 import { keycloak, keycloakConfigured } from "./keycloak";
-import { formatDate, formatDuration } from "./format";
-import type { Collection, CollectionStatus, DashboardKpis, HistoryRunSummary, RunResult, SkippedFile } from "./types";
+import { formatLastRun, formatNumber, initials, percent, shortEnvironment } from "./format";
+import { actionButtonClass, applyStatuses, describeSkipped, markInvalidSkipped, markQueuedRunning, rerunTitle } from "./collections";
+import { Icon } from "./Icon";
+import { StatusBadge } from "./StatusBadge";
+import type { Collection, DashboardKpis, HistoryRunSummary, RunResult, SkippedFile } from "./types";
 
-const statusClasses: Record<CollectionStatus, string> = {
-  idle: "bg-slate-100 text-slate-700 border-slate-200",
-  running: "bg-amber-100 text-amber-800 border-amber-200",
-  passed: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  failed: "bg-rose-100 text-rose-800 border-rose-200",
-  error: "bg-orange-100 text-orange-800 border-orange-200"
+type StatusTab = "all" | "failed" | "passed" | "running";
+type SortKey = "collection" | "environment" | "status" | "apis" | "assertions" | "tests" | "lastRun";
+
+const sortValue: Record<SortKey, (collection: Collection) => string | number> = {
+  collection: (c) => c.folderName.toLowerCase(),
+  environment: (c) => (c.environmentFile ?? "").toLowerCase(),
+  status: (c) => c.status,
+  apis: (c) => c.apiCount,
+  assertions: (c) => (c.assertions.total ? c.assertions.passed / c.assertions.total : 0),
+  tests: (c) => (c.tests?.total ? c.tests.passed / c.tests.total : 0),
+  lastRun: (c) => (c.lastRunAt ? Date.parse(c.lastRunAt) : 0),
 };
 
-function StatusBadge({ status }: { status: CollectionStatus }) {
+const matchesTab = (collection: Collection, tab: StatusTab) =>
+  tab === "all" ||
+  collection.status === tab ||
+  (tab === "failed" && collection.status === "error");
+
+function SplitBar({ passed, total }: Readonly<{ passed: number; total: number }>) {
+  const width = total ? (passed / total) * 100 : 0;
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold capitalize border ${statusClasses[status]}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${status === "passed" ? "bg-emerald-600" : status === "running" ? "bg-amber-600 animate-pulse" : "bg-rose-600"}`} />
-      {status}
-    </span>
+    <div className="stat-bar" aria-hidden="true">
+      <i style={{ width: `${width}%` }} />
+      {passed < total && <i className="f" style={{ width: `${Math.max(100 - width, 1.5)}%` }} />}
+    </div>
+  );
+}
+
+function Progress({ passed, total }: Readonly<{ passed: number; total: number }>) {
+  const value = percent(passed, total);
+  const ok = passed === total;
+  return (
+    <div className="prog">
+      <div className="prog-txt">
+        <b className={ok ? "ok" : "bad"}>{formatNumber(passed)}</b>
+        <span className="muted">/ {formatNumber(total)}</span>
+        <span className="pct">{value}%</span>
+      </div>
+      <div className={`bar ${ok ? "" : "bad"}`}><i style={{ width: `${value}%` }} /></div>
+    </div>
+  );
+}
+
+// Collection ids are URL-safe slugs, so they need no encoding in the path.
+const collectionIdFromPath = () => /^\/collections\/([^/]+)\/?$/.exec(globalThis.location.pathname)?.[1] ?? null;
+
+type RunDetailsPageProps = Omit<ComponentProps<typeof Drawer>, "collection"> & { collection?: Collection };
+
+function RunDetailsPage({ collection, ...drawerProps }: Readonly<RunDetailsPageProps>) {
+  if (!collection) {
+    return (
+      <output className="loading">
+        <Icon name="loader" size={28} className="spin" />
+        Loading run details…
+      </output>
+    );
+  }
+  return (
+    <>
+      <Drawer collection={collection} {...drawerProps} />
+      <ToastContainer />
+    </>
   );
 }
 
@@ -36,8 +87,10 @@ export default function App() {
   const [kpis, setKpis] = useState<DashboardKpis | null>(null);
   const [skipped, setSkipped] = useState<SkippedFile[]>([]);
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<"all" | CollectionStatus>("all");
-  const [selected, setSelected] = useState<Collection | null>(null);
+  const [status, setStatus] = useState<StatusTab>("all");
+  const [sort, setSort] = useState<{ key: SortKey | null; dir: 1 | -1 }>({ key: null, dir: 1 });
+  const [selectedId, setSelectedId] = useState(collectionIdFromPath);
+  const dashboardScrollY = useRef(0);
   const [result, setResult] = useState<RunResult | null>(null);
   const [resultLoading, setResultLoading] = useState(false);
   const [historyTarget, setHistoryTarget] = useState<Collection | null>(null);
@@ -45,12 +98,11 @@ export default function App() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [activeRuns, setActiveRuns] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
-  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isBulkRunning, setIsBulkRunning] = useState(false);
-  const [bulkRunTrackedIds, setBulkRunTrackedIds] = useState<Set<string>>(new Set());
+  const bulkRunTrackedIdsRef = useRef<Set<string>>(new Set());
   const headerCheckboxRef = useRef<HTMLInputElement>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const handleLogin = () => {
@@ -61,7 +113,7 @@ export default function App() {
 
   const handleLogout = () => {
     setIsProfileMenuOpen(false);
-    if (keycloak) void keycloak.logout({ redirectUri: globalThis.location.origin + import.meta.env.BASE_URL });
+    if (keycloak) void keycloak.logout({ redirectUri: globalThis.location.origin });
   };
 
   useEffect(() => {
@@ -119,7 +171,6 @@ export default function App() {
         return next;
       });
       if (nextSkipped) setSkipped(nextSkipped);
-      setLastRefreshed(new Date());
       setError(null);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Could not refresh dashboard data.");
@@ -159,12 +210,7 @@ export default function App() {
           .filter(({ status, failed }) => failed || ["passed", "failed", "error"].includes(status))
           .map(({ collectionId }) => collectionId);
 
-        setCollections((current) => current
-          ? current.map((collection) => {
-            const nextStatus = statuses.find((item) => item.collectionId === collection.id)?.status;
-            return nextStatus ? { ...collection, status: nextStatus } : collection;
-          })
-          : current);
+        setCollections((current) => current && applyStatuses(current, statuses));
 
         if (completedCollectionIds.length > 0) {
           setActiveRuns((current) => {
@@ -173,22 +219,17 @@ export default function App() {
             return next;
           });
 
-          setBulkRunTrackedIds((prevTracked) => {
-            if (prevTracked.size === 0) {
-              void refresh();
-              return prevTracked;
-            }
-            const nextTracked = new Set(prevTracked);
-            for (const id of completedCollectionIds) {
-              nextTracked.delete(id);
-            }
-            if (nextTracked.size === 0) {
+          const tracked = bulkRunTrackedIdsRef.current;
+          if (tracked.size === 0) {
+            void refresh();
+          } else {
+            for (const id of completedCollectionIds) tracked.delete(id);
+            if (tracked.size === 0) {
               setIsBulkRunning(false);
               setSelectedIds(new Set());
               void refresh();
             }
-            return nextTracked;
-          });
+          }
         }
       } finally {
         polling = false;
@@ -196,10 +237,10 @@ export default function App() {
     };
 
     void pollStatuses();
-    const timer = window.setInterval(() => void pollStatuses(), 1500);
+    const timer = globalThis.setInterval(() => void pollStatuses(), 1500);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      globalThis.clearInterval(timer);
     };
   }, [activeRuns, refresh]);
 
@@ -223,13 +264,61 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const syncRoute = () => setSelectedId(collectionIdFromPath());
+    globalThis.addEventListener("popstate", syncRoute);
+    return () => globalThis.removeEventListener("popstate", syncRoute);
+  }, []);
+
+  const isSignedIn = Boolean(currentUser);
+  useEffect(() => {
+    if (!selectedId || !isSignedIn) return;
+    let cancelled = false;
+    setResult(null);
+    setResultLoading(true);
+    api.result(selectedId)
+      .then(({ result: nextResult }) => {
+        if (!cancelled) setResult(nextResult);
+      })
+      .catch((requestError: unknown) => {
+        if (!cancelled) setError(requestError instanceof Error ? requestError.message : "Could not load run details.");
+      })
+      .finally(() => {
+        if (!cancelled) setResultLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId, isSignedIn]);
+
+  // A link can name a collection that no longer exists; fall back to the dashboard.
+  useEffect(() => {
+    if (selectedId && collections && !collections.some((c) => c.id === selectedId)) {
+      globalThis.history.replaceState(null, "", "/");
+      setSelectedId(null);
+      setError("Collection not found.");
+    }
+  }, [selectedId, collections]);
+
+  useLayoutEffect(() => {
+    globalThis.scrollTo(0, selectedId ? 0 : dashboardScrollY.current);
+  }, [selectedId]);
+
   const filteredCollections = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return (collections ?? []).filter((collection) => {
-      const matchesSearch = !query || collection.folderName.toLowerCase().includes(query);
-      return matchesSearch && (status === "all" || collection.status === status);
+    const rows = (collections ?? []).filter((collection) => {
+      const haystack = `${collection.folderName} ${collection.collectionFile} ${collection.environmentFile ?? ""}`.toLowerCase();
+      return (!query || haystack.includes(query)) && matchesTab(collection, status);
     });
-  }, [collections, search, status]);
+    if (!sort.key) return rows;
+    const value = sortValue[sort.key];
+    return [...rows].sort((a, b) => {
+      const x = value(a);
+      const y = value(b);
+      if (x === y) return 0;
+      return (x > y ? 1 : -1) * sort.dir;
+    });
+  }, [collections, search, status, sort]);
 
   const displayedCollectionIds = useMemo(() => {
     return filteredCollections.map((c) => c.id);
@@ -269,8 +358,7 @@ export default function App() {
     }
   };
 
-  const handleToggleRow = (id: string, event: React.ChangeEvent<HTMLInputElement>) => {
-    event.stopPropagation();
+  const handleToggleRow = (id: string) => {
     setOpenActionMenuId(null);
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -295,25 +383,12 @@ export default function App() {
       const skipped = response.data?.skipped ?? [];
 
       if (skipped.length > 0) {
-        const skippedDetails = skipped.map(
-          (item) => `Collection "${item.collectionId}" skipped: ${item.reason.replace(/_/g, " ")}.`
-        ).join(" ");
-        setError(skippedDetails);
-
-        setCollections((current) => current ? current.map((c) => {
-          const skippedItem = skipped.find((s) => s.collectionId === c.id);
-          if (skippedItem?.reason === "invalid_collection") {
-            return { ...c, status: "error" };
-          }
-          return c;
-        }) : current);
+        setError(describeSkipped(skipped));
+        setCollections((current) => current && markInvalidSkipped(current, skipped));
       }
 
       if (queued.length > 0) {
-        setCollections((current) => current ? current.map((c) => {
-          const queuedItem = queued.find((q) => q.collectionId === c.id);
-          return queuedItem ? { ...c, status: "running", runId: queuedItem.runId } : c;
-        }) : current);
+        setCollections((current) => current && markQueuedRunning(current, queued));
 
         setActiveRuns((current) => {
           const next = { ...current };
@@ -323,31 +398,30 @@ export default function App() {
           return next;
         });
 
-        setBulkRunTrackedIds(new Set(queued.map((q) => q.collectionId)));
+        bulkRunTrackedIdsRef.current = new Set(queued.map((q) => q.collectionId));
       } else {
         setIsBulkRunning(false);
         setSelectedIds(new Set());
         await refresh();
       }
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Failed to run selected collections.");
       setIsBulkRunning(false);
-      setBulkRunTrackedIds(new Set());
+      bulkRunTrackedIdsRef.current = new Set();
+      // Refresh first: a successful refresh clears the error banner.
       await refresh();
+      setError(requestError instanceof Error ? requestError.message : "Failed to run selected collections.");
     }
   };
 
-  async function showResult(collection: Collection) {
-    setSelected(collection);
-    setResult(null);
-    setResultLoading(true);
-    try {
-      setResult((await api.result(collection.id)).result);
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Could not load run details.");
-    } finally {
-      setResultLoading(false);
-    }
+  function showResult(collection: Collection) {
+    dashboardScrollY.current = globalThis.scrollY;
+    globalThis.history.pushState(null, "", `/collections/${collection.id}`);
+    setSelectedId(collection.id);
+  }
+
+  function closeResult() {
+    globalThis.history.pushState(null, "", "/");
+    setSelectedId(null);
   }
 
   async function openHistory(collection: Collection) {
@@ -371,363 +445,339 @@ export default function App() {
       const runResponse = await api.run(id);
       setActiveRuns((current) => ({ ...current, [id]: runResponse.data.runId }));
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Could not start collection.");
+      // Refresh first: a successful refresh clears the error banner.
       await refresh();
+      setError(requestError instanceof Error ? requestError.message : "Could not start collection.");
     }
   }
 
-  const cards = kpis
-    ? [
-      { label: "Total Collections", value: kpis.totalCollections, highlight: "text-slate-900" },
-      { label: "Passed Collections", value: kpis.passedCollections, highlight: "text-emerald-800" },
-      { label: "Failed Collections", value: kpis.failedCollections, highlight: kpis.failedCollections > 0 ? "text-rose-700" : "text-slate-900" },
-      { label: "Total APIs", value: `${kpis.totalApis} APIs`, highlight: "text-sky-700" },
-      { label: "Failed Assertions", value: kpis.failedAssertions, highlight: kpis.failedAssertions > 0 ? "text-rose-700" : "text-emerald-800" }
-    ]
-    : [];
+  const allCollections = collections ?? [];
+  const totalAssertions = allCollections.reduce((sum, c) => sum + c.assertions.total, 0);
+  const environmentCount = new Set(allCollections.map((c) => c.environmentFile).filter(Boolean)).size;
+  const failedNames = allCollections.filter((c) => matchesTab(c, "failed")).map((c) => c.folderName).join(", ") || "None";
+  const tabs: { key: StatusTab; label: string; count: number }[] = [
+    { key: "all", label: "All collections", count: allCollections.length },
+    { key: "failed", label: "Failed", count: allCollections.filter((c) => matchesTab(c, "failed")).length },
+    { key: "passed", label: "Passed", count: allCollections.filter((c) => c.status === "passed").length },
+  ];
+  const runningCount = allCollections.filter((c) => c.status === "running").length;
+  if (runningCount > 0 || status === "running") tabs.push({ key: "running", label: "Running", count: runningCount });
+  const userLabel = (currentUserName ?? currentUser ?? "U").trim();
+
+  const toggleSort = (key: SortKey) =>
+    setSort((current) => (current.key === key ? { key, dir: current.dir === 1 ? -1 : 1 } : { key, dir: 1 }));
+
+  const sortHeader = (key: SortKey, label: string) => (
+    <th>
+      <button type="button" className={`th-sort${sort.key === key ? " on" : ""}`} onClick={() => toggleSort(key)} aria-label={`Sort by ${label}`}>
+        {label} <Icon name="sort" size={13} />
+      </button>
+    </th>
+  );
 
   if (!currentUser) {
     return <LoginPage onLogin={handleLogin} error={loginError} />;
   }
 
+  if (selectedId) {
+    return (
+      <RunDetailsPage
+        collection={allCollections.find((c) => c.id === selectedId)}
+        result={result}
+        loading={resultLoading}
+        error={error}
+        onClose={closeResult}
+      />
+    );
+  }
+
   return (
-    <main className="min-h-screen bg-white text-slate-900">
-      {/* Top Banner / Navbar */}
-      <header className="border-b border-slate-200 bg-white shadow-xs">
-        <div className="mx-auto max-w-7xl xl:max-w-[1380px] px-4 py-5 sm:px-6 lg:px-8">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
-                API Test Execution Dashboard
-              </h1>
-            </div>
-            <div className="flex items-center gap-2.5">
-
-              {isQaAdmin && (
-                <button
-                  type="button"
-                  id="auto-rerun-settings-btn"
-                  onClick={() => setIsSettingsOpen(true)}
-                  className="group inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 shadow-xs hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 active:bg-sky-100 transition cursor-pointer"
-                  title="Configure scheduled runs and email alerts"
-                >
-                  <svg className="h-3.5 w-3.5 text-slate-500 group-hover:text-sky-600 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  Auto Re-run Settings
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => void refresh(true)}
-                className="group inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 shadow-xs hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 active:bg-sky-100 transition"
-              >
-                <svg className="h-3.5 w-3.5 text-slate-500 group-hover:text-sky-600 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Refresh
-              </button>
-              <div className="relative" ref={profileMenuRef}>
-                <button
-                  type="button"
-                  id="user-profile-menu-button"
-                  aria-label="Open user profile menu"
-                  aria-haspopup="menu"
-                  aria-expanded={isProfileMenuOpen}
-                  aria-controls="user-profile-menu"
-                  onClick={() => setIsProfileMenuOpen((open) => !open)}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-600 shadow-xs transition hover:border-sky-400 hover:bg-sky-50 hover:text-sky-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-600"
-                  title="User profile"
-                >
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.5 20.1a7.5 7.5 0 0115 0A17.9 17.9 0 0112 21.75c-2.7 0-5.25-.6-7.5-1.65z" />
-                  </svg>
-                </button>
-                {isProfileMenuOpen && (
-                  <div
-                    id="user-profile-menu"
-                    role="menu"
-                    aria-labelledby="user-profile-menu-button"
-                    className="absolute right-0 z-50 mt-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl ring-1 ring-slate-900/5"
-                  >
-                    <div className="flex items-center gap-3 bg-slate-50/80 px-4 py-3">
-                      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sm font-bold text-sky-800" aria-hidden="true">
-                        {(currentUserName ?? currentUser ?? "U").trim().charAt(0).toUpperCase()}
-                      </span>
-                      <div className="min-w-0">
-                        {currentUserName && <p className="truncate text-sm font-semibold text-slate-900">{currentUserName}</p>}
-                        <p className="truncate text-xs text-slate-500" title={currentUser ?? undefined}>{currentUser}</p>
-                      </div>
-                    </div>
-                    <div className="border-t border-slate-100 p-2">
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={handleLogout}
-                        className="inline-flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 transition hover:bg-rose-50 hover:text-rose-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-600"
-                      >
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                        </svg>
-                        Log out
-                      </button>
-                    </div>
+    <main className="min-h-screen">
+      <header className="topbar">
+        <h1 className="app-title">API Test Execution Dashboard</h1>
+        <div className="head-actions">
+          {isQaAdmin && (
+            <button
+              type="button"
+              id="auto-rerun-settings-btn"
+              className="btn"
+              onClick={() => setIsSettingsOpen(true)}
+              title="Configure scheduled runs and email alerts"
+            >
+              <Icon name="clock" />
+              <span className="lbl">Auto re-run</span>
+            </button>
+          )}
+          <button type="button" className="btn" onClick={() => void refresh(true)}>
+            <Icon name="refresh" />
+            <span className="lbl">Refresh</span>
+          </button>
+          <div className="relative" ref={profileMenuRef}>
+            <button
+              type="button"
+              id="user-profile-menu-button"
+              className="me-av"
+              aria-label="Open user profile menu"
+              aria-haspopup="menu"
+              aria-expanded={isProfileMenuOpen}
+              aria-controls="user-profile-menu"
+              onClick={() => setIsProfileMenuOpen((open) => !open)}
+              title="User profile"
+            >
+              {initials(userLabel)}
+            </button>
+            {isProfileMenuOpen && (
+              <div id="user-profile-menu" role="menu" aria-labelledby="user-profile-menu-button" className="menu right-0 top-full mt-2 w-80 max-w-[calc(100vw-2rem)]">
+                <div className="menu-user">
+                  <span className="me-av" aria-hidden="true">{initials(userLabel)}</span>
+                  <div className="min-w-0">
+                    {currentUserName && <p className="font-medium">{currentUserName}</p>}
+                    <p className="small muted" title={currentUser ?? undefined}>{currentUser}</p>
                   </div>
-                )}
+                </div>
+                <hr />
+                <button type="button" role="menuitem" onClick={handleLogout}>
+                  <Icon name="logout" size={16} />
+                  Log out
+                </button>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </header>
 
-      <div className="mx-auto max-w-7xl xl:max-w-[1380px] px-4 py-6 sm:px-6 lg:px-8 space-y-6">
-        {error && (
-          <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs font-medium text-rose-900">
-            {error}
-          </div>
+      <div className="page">
+        {error && <div role="alert" className="alert">{error}</div>}
+
+        {kpis && (
+          <section aria-label="Summary" className="stats" style={{ marginTop: 28 }}>
+            <div className="stat">
+              <div className="stat-label"><span className="stat-ic acc"><Icon name="layers" size={15} /></span>Total collections</div>
+              <div className="stat-val">{formatNumber(kpis.totalCollections)}</div>
+              <div className="stat-meta">{environmentCount} {environmentCount === 1 ? "environment" : "environments"}</div>
+            </div>
+            <div className="stat">
+              <div className="stat-label"><span className="stat-ic pass"><Icon name="check" size={15} /></span>Passed collections</div>
+              <div className="stat-val pass">{formatNumber(kpis.passedCollections)}</div>
+              <div className="stat-meta">{Math.round(percent(kpis.passedCollections, kpis.totalCollections))}% of collections</div>
+              <SplitBar passed={kpis.passedCollections} total={kpis.totalCollections} />
+            </div>
+            <div className="stat">
+              <div className="stat-label"><span className="stat-ic fail"><Icon name="x" size={15} /></span>Failed collections</div>
+              <div className={`stat-val${kpis.failedCollections > 0 ? " fail" : ""}`}>{formatNumber(kpis.failedCollections)}</div>
+              <div className="stat-meta" title={failedNames}>{failedNames}</div>
+            </div>
+            <div className="stat">
+              <div className="stat-label"><span className="stat-ic info"><Icon name="zap" size={15} /></span>Total APIs</div>
+              <div className="stat-val">{formatNumber(kpis.totalApis)}</div>
+              <div className="stat-meta">Across {kpis.totalCollections} {kpis.totalCollections === 1 ? "collection" : "collections"}</div>
+            </div>
+            <div className="stat">
+              <div className="stat-label"><span className="stat-ic fail"><Icon name="alert" size={15} /></span>Failed assertions</div>
+              <div className={`stat-val${kpis.failedAssertions > 0 ? " fail" : ""}`}>
+                {formatNumber(kpis.failedAssertions)} <small>/ {formatNumber(totalAssertions)}</small>
+              </div>
+              <div className="stat-meta">{percent(totalAssertions - kpis.failedAssertions, totalAssertions)}% of assertions passing</div>
+              <SplitBar passed={totalAssertions - kpis.failedAssertions} total={totalAssertions} />
+            </div>
+          </section>
         )}
 
-        {/* Metric Cards Grid */}
-        <section aria-label="Summary" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          {cards.map((card) => (
-            <div key={card.label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs transition-all duration-150 hover:border-sky-300 hover:bg-sky-50/20 hover:shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{card.label}</p>
-              <p className={`mt-2 text-2xl font-black ${card.highlight}`}>{card.value}</p>
-            </div>
-          ))}
-        </section>
-
-        {/* Main Collections Table Card */}
-        <section className="rounded-xl border border-slate-200 bg-white shadow-xs overflow-hidden">
-          <div className="flex flex-col gap-2 border-b border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-end">
-            <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
-              <input
-                id="collection-search"
-                type="search"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search"
-                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:border-slate-500 focus:outline-none"
-              />
-              <select
-                id="status-filter"
-                value={status}
-                onChange={(event) => setStatus(event.target.value as typeof status)}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 focus:border-slate-500 focus:outline-none"
+        <div className="toolbar" style={kpis ? undefined : { marginTop: 28 }}>
+          <label className="search">
+            <Icon name="search" size={16} />
+            <input
+              id="collection-search"
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search collection or file"
+              aria-label="Search collections"
+            />
+          </label>
+          <div className="seg" role="tablist" aria-label="Filter by status">
+            {tabs.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                role="tab"
+                aria-selected={status === tab.key}
+                className={status === tab.key ? "on" : ""}
+                onClick={() => setStatus(tab.key)}
               >
-                <option value="all">All Statuses</option>
-                <option value="passed">Passed</option>
-                <option value="failed">Failed</option>
-                <option value="running">Running</option>
-              </select>
-
-              {isQaAdmin && (selectedIds.size > 0 || isBulkRunning) && (
-                <button
-                  type="button"
-                  id="run-selected-btn"
-                  disabled={isBulkRunning}
-                  onClick={() => void handleRunSelected()}
-                  className="group inline-flex items-center gap-1.5 rounded-lg border border-sky-600 bg-sky-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-sky-700 active:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60 transition cursor-pointer"
-                  title="Run selected collections"
-                >
-                  {isBulkRunning ? (
-                    <svg className="h-3.5 w-3.5 animate-spin text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                    </svg>
-                  ) : (
-                    <svg className="h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  )}
-                  <span>{isBulkRunning ? "Running Selected..." : `Run Selected ${selectedIds.size}`}</span>
+                {tab.label}<span className="cnt">{tab.count}</span>
+              </button>
+            ))}
+          </div>
+          {isQaAdmin && (selectedIds.size > 0 || isBulkRunning) && (
+            <div className="bulk">
+              {selectedIds.size > 0 && <span className="bulk-count">{selectedIds.size} selected</span>}
+              <button
+                type="button"
+                id="run-selected-btn"
+                className="btn btn-sm btn-success"
+                disabled={isBulkRunning}
+                onClick={() => void handleRunSelected()}
+                title="Run selected collections"
+              >
+                {isBulkRunning ? <Icon name="loader" size={14} className="spin" /> : <Icon name="play" size={14} />}
+                {isBulkRunning ? "Running selected…" : "Run selected"}
+              </button>
+              {!isBulkRunning && (
+                <button type="button" className="btn btn-sm btn-ghost" onClick={() => setSelectedIds(new Set())}>
+                  Clear
                 </button>
               )}
             </div>
-          </div>
+          )}
+          <span className="spacer" />
+          {collections !== null && (
+            <span className="small muted">
+              Showing <b className="font-medium text-slate-900">{filteredCollections.length}</b> of {allCollections.length} collections
+            </span>
+          )}
+        </div>
 
+        <section className="card overflow-hidden">
           {collections === null && (
-            <div role="status" className="p-12 text-center text-xs text-slate-500">
+            <output className="loading">
+              <Icon name="loader" size={28} className="spin" />
               Loading collection inventory…
-            </div>
+            </output>
           )}
 
           {collections !== null && filteredCollections.length === 0 && (
-            <div className="p-12 text-center text-xs text-slate-500">
-              No collections match the current filters.
+            <div className="empty">
+              <Icon name="search" size={28} />
+              <h3>No collections match the current filters.</h3>
+              <p>Try a different name or clear the filters.</p>
+              <button type="button" className="btn btn-sm" onClick={() => { setSearch(""); setStatus("all"); }}>
+                Clear filters
+              </button>
             </div>
           )}
 
           {filteredCollections.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-left text-xs bg-white">
-                <thead className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+            <div className="table-scroll">
+              <table className="tbl">
+                <thead>
                   <tr>
-                    {isQaAdmin && (<th className="w-10 px-3 py-3.5 text-center">
-                      <input
-                        type="checkbox"
-                        id="select-all-collections"
-                        aria-label="Select all collections"
-                        ref={headerCheckboxRef}
-                        checked={isAllSelected}
-                        onChange={handleToggleAll}
-                        className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500 cursor-pointer accent-sky-600 align-middle"
-                      />
-                    </th>)}
-                    <th className="w-12 px-4 py-3.5 text-center">S.No</th>
-                    <th className="px-5 py-3.5">Collection & File</th>
-                    <th className="px-3.5 py-3.5 whitespace-nowrap">Environment</th>
-                    <th className="px-3.5 py-3.5 whitespace-nowrap">Status</th>
-                    <th className="px-3.5 py-3.5 whitespace-nowrap">APIs / Endpoints</th>
-                    <th className="px-3.5 py-3.5 whitespace-nowrap">Total Assertion (Passed/Total)</th>
-                    <th className="px-3.5 py-3.5 whitespace-nowrap">Total Test (Passed/Total)</th>
-                    <th className="px-3.5 py-3.5 whitespace-nowrap">Last Run</th>
-                    <th className="px-3.5 py-3.5 whitespace-nowrap">Duration</th>
-                    <th className="sticky right-0 z-20 bg-slate-50 px-4 py-3.5 text-right whitespace-nowrap shadow-[-8px_0_12px_-8px_rgba(15,23,42,0.25)]">Actions</th>
+                    {isQaAdmin && (
+                      <th className="chk">
+                        <input
+                          type="checkbox"
+                          id="select-all-collections"
+                          aria-label="Select all collections"
+                          ref={headerCheckboxRef}
+                          checked={isAllSelected}
+                          onChange={handleToggleAll}
+                        />
+                      </th>
+                    )}
+                    <th className="idx">#</th>
+                    {sortHeader("collection", "Collection & file")}
+                    {sortHeader("environment", "Environment")}
+                    {sortHeader("status", "Status")}
+                    {sortHeader("apis", "APIs / Endpoints")}
+                    {sortHeader("assertions", "Assertions passed")}
+                    {sortHeader("tests", "Tests passed")}
+                    {sortHeader("lastRun", "Last run")}
+                    <th className="act">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody>
                   {filteredCollections.map((collection, index) => {
                     const isSelected = selectedIds.has(collection.id);
                     const isRowActionDisabled = isSelected;
-                    const opensUpward = filteredCollections.length <= 2 || index >= filteredCollections.length - 2;
+                    const isMenuOpen = openActionMenuId === collection.id;
+                    const opensUpward = filteredCollections.length > 2 && index >= filteredCollections.length - 2;
+                    const position = allCollections.indexOf(collection);
+                    const tests = collection.tests ?? { passed: 0, failed: 0, total: 0 };
                     return (
-                      <tr
-                        key={collection.id}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => void showResult(collection)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            void showResult(collection);
-                          }
-                        }}
-                        className={`group cursor-pointer transition-all duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-700 ${isSelected ? "bg-sky-50/50 hover:bg-sky-100/70" : "bg-white hover:bg-sky-100/60"
-                          }`}
-                      >
-                        {isQaAdmin && (<td
-                          className="w-10 px-3 py-3.5 text-center"
-                          onClick={(e) => e.stopPropagation()}
-                          onKeyDown={(e) => e.stopPropagation()}
-                        >
-                          <input
-                            type="checkbox"
-                            id={`select-collection-${collection.id}`}
-                            aria-label={`Select collection ${collection.folderName}`}
-                            checked={isSelected}
-                            onChange={(e) => handleToggleRow(collection.id, e)}
-                            className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500 cursor-pointer accent-sky-600 align-middle"
-                          />
-                        </td>)}
-                        <td className="w-12 px-4 py-3.5 text-center font-bold text-slate-400 group-hover:text-sky-800 text-xs border-l-4 border-transparent group-hover:border-sky-500 transition-all whitespace-nowrap">
-                          {index + 1}
+                      <tr key={collection.id} className={`relative cursor-pointer ${isSelected ? "is-sel" : ""}`}>
+                        {isQaAdmin && (
+                          <td className="chk relative z-10">
+                            <input
+                              type="checkbox"
+                              id={`select-collection-${collection.id}`}
+                              aria-label={`Select collection ${collection.folderName}`}
+                              checked={isSelected}
+                              onChange={() => handleToggleRow(collection.id)}
+                            />
+                          </td>
+                        )}
+                        <td className="idx num">{index + 1}</td>
+                        <td>
+                          <div className="coll">
+                            <span className={`tile h${(position % 4) + 1}`} aria-hidden="true">{initials(collection.folderName)}</span>
+                            <div className="min-w-0">
+                              {/* The after: overlay stretches this button over the whole row, so clicking anywhere on the row opens the result. */}
+                              <button
+                                type="button"
+                                onClick={() => showResult(collection)}
+                                className="coll-name block cursor-pointer text-left focus:outline-none after:absolute after:inset-0 after:content-['']"
+                              >
+                                {collection.folderName}
+                              </button>
+                              <div className="coll-file mono" title={collection.collectionFile}>
+                                <Icon name="file" size={13} />
+                                <span>{collection.collectionFile}</span>
+                              </div>
+                            </div>
+                          </div>
                         </td>
-                        <td className="max-w-72 px-5 py-3.5">
-                          <p className="font-bold text-slate-900 text-sm group-hover:text-sky-950 transition-colors">{collection.folderName}</p>
-                          <p className="mt-0.5 truncate text-[11px] font-mono text-slate-500" title={collection.collectionFile}>{collection.collectionFile}</p>
-                        </td>
-                        <td className="px-3.5 py-3 whitespace-nowrap">
+                        <td>
                           {collection.environmentFile ? (
-                            <span
-                              title={collection.environmentFile}
-                              className="inline-block max-w-44 truncate rounded-md bg-slate-100 px-2 py-0.5 font-mono text-[11px] text-slate-700 border border-slate-200 group-hover:bg-white group-hover:border-sky-300 group-hover:text-slate-900 shadow-2xs transition-colors align-middle"
-                            >
-                              {collection.environmentFile}
+                            <span className="chip mono trunc" title={collection.environmentFile}>
+                              <span className="t">{shortEnvironment(collection.environmentFile)}</span>
                             </span>
                           ) : (
-                            <span className="text-slate-400">Default Environment</span>
+                            <span className="muted">Default Environment</span>
                           )}
                         </td>
-                        <td className="px-3.5 py-3 whitespace-nowrap">
-                          <StatusBadge status={collection.status} />
+                        <td><StatusBadge status={collection.status} /></td>
+                        <td>
+                          <span className="num nowrap"><b className="font-medium">{formatNumber(collection.apiCount)}</b> <span className="muted">APIs</span></span>
                         </td>
-                        <td className="px-3.5 py-3 font-medium text-slate-700 whitespace-nowrap">
-                          <span><strong className="font-bold text-slate-900">{collection.apiCount}</strong> APIs</span>
+                        <td><Progress passed={collection.assertions.passed} total={collection.assertions.total} /></td>
+                        <td><Progress passed={tests.passed} total={tests.total} /></td>
+                        <td>
+                          <span className="lastrun"><Icon name="clock" size={15} />{formatLastRun(collection.lastRunAt)}</span>
                         </td>
-                        <td className="px-3.5 py-3 font-medium text-slate-700 whitespace-nowrap">
-                          <span>
-                            <span className="text-emerald-800 font-bold">{collection.assertions.passed}</span>
-                            <span className="text-slate-400"> / </span>
-                            <span className="text-slate-700">{collection.assertions.total}</span>
-                          </span>
-                        </td>
-                        <td className="px-3.5 py-3 font-medium text-slate-700 whitespace-nowrap">
-                          <span>
-                            <span className="text-emerald-800 font-bold">{collection.tests?.passed ?? 0}</span>
-                            <span className="text-slate-400"> / </span>
-                            <span className="text-slate-700">{collection.tests?.total ?? 0}</span>
-                          </span>
-                        </td>
-                        <td className="px-3.5 py-3 text-slate-600 whitespace-nowrap">
-                          {formatDate(collection.lastRunAt)}
-                        </td>
-                        <td className="px-3.5 py-3 font-mono text-slate-700 whitespace-nowrap">
-                          {formatDuration(collection.durationMs)}
-                        </td>
-                        <td className={`sticky right-0 ${openActionMenuId === collection.id ? "z-30" : "z-10"
-                          } px-4 py-3 text-right whitespace-nowrap shadow-[-8px_0_12px_-8px_rgba(15,23,42,0.2)] ${isSelected
-                            ? "bg-sky-50 group-hover:bg-sky-100"
-                            : "bg-white group-hover:bg-sky-100"
-                          }`}>
-                          <div className="relative inline-block text-left action-menu-dropdown-container" onClick={(e) => e.stopPropagation()}>
+                        <td className={`act ${isMenuOpen ? "z-30" : "z-10"}`}>
+                          <div className="relative inline-block text-left action-menu-dropdown-container">
                             <button
                               type="button"
                               disabled={isRowActionDisabled}
-                              onClick={() => setOpenActionMenuId(openActionMenuId === collection.id ? null : collection.id)}
-                              className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-all ${isRowActionDisabled
-                                ? "border-slate-200 bg-slate-50 text-slate-300 cursor-not-allowed opacity-50"
-                                : openActionMenuId === collection.id
-                                  ? "border-slate-300 bg-slate-100 text-slate-900 shadow-2xs"
-                                  : "border-slate-200 bg-white text-slate-600 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 active:bg-sky-100"
-                                }`}
+                              onClick={() => setOpenActionMenuId(isMenuOpen ? null : collection.id)}
+                              className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-all ${actionButtonClass(isRowActionDisabled, isMenuOpen)}`}
                               title={isRowActionDisabled ? "Actions are disabled for selected collections" : "Actions menu"}
-                              aria-expanded={openActionMenuId === collection.id}
+                              aria-expanded={isMenuOpen}
                               aria-label="Actions menu"
                             >
-                              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v.01M12 12v.01M12 19v.01" />
-                              </svg>
+                              <Icon name="more" />
                             </button>
 
-                            {openActionMenuId === collection.id && !isRowActionDisabled && (
-                              <div
-                                className={`absolute right-0 z-30 w-44 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl ring-1 ring-slate-900/5 ${opensUpward
-                                  ? "bottom-full mb-2 origin-bottom-right"
-                                  : "top-full mt-2 origin-top-right"
-                                  }`}
-                              >
-                                {isQaAdmin && (<button
-                                  type="button"
-                                  disabled={
-                                    collection.status === "running" ||
-                                    isRowActionDisabled ||
-                                    collection.actions?.canRerun === false
-                                  }
-                                  onClick={() => {
-                                    setOpenActionMenuId(null);
-                                    void run(collection.id);
-                                  }}
-                                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-sky-50 hover:text-sky-700 disabled:cursor-not-allowed disabled:opacity-50 transition-colors text-left"
-                                  title={
-                                    collection.status === "running"
-                                      ? "A run is currently in progress"
-                                      : collection.actions?.canRerun === false
-                                        ? "Rerun is not available"
-                                        : isRowActionDisabled
-                                          ? "Actions are disabled for selected collections"
-                                          : undefined
-                                  }
-                                >
-                                  <svg className="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                  </svg>
-                                  <span>{collection.lastRunAt ? "Re-run Collection" : "Run Collection"}</span>
-                                </button>)}
-
+                            {isMenuOpen && !isRowActionDisabled && (
+                              <div className={`menu right-0 ${opensUpward ? "bottom-full mb-2" : "top-full mt-2"}`}>
+                                {isQaAdmin && (
+                                  <button
+                                    type="button"
+                                    disabled={
+                                      collection.status === "running" ||
+                                      isRowActionDisabled ||
+                                      collection.actions?.canRerun === false
+                                    }
+                                    onClick={() => {
+                                      setOpenActionMenuId(null);
+                                      void run(collection.id);
+                                    }}
+                                    title={rerunTitle(collection, isRowActionDisabled)}
+                                  >
+                                    <Icon name="play" size={16} />
+                                    <span>{collection.lastRunAt ? "Re-run Collection" : "Run Collection"}</span>
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   disabled={isRowActionDisabled}
@@ -735,11 +785,8 @@ export default function App() {
                                     setOpenActionMenuId(null);
                                     void openHistory(collection);
                                   }}
-                                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-sky-50 hover:text-sky-700 disabled:cursor-not-allowed disabled:opacity-50 transition-colors text-left"
                                 >
-                                  <svg className="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                  </svg>
+                                  <Icon name="history" size={16} />
                                   <span>View History</span>
                                 </button>
                               </div>
@@ -756,13 +803,13 @@ export default function App() {
         </section>
 
         {skipped.length > 0 && (
-          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
-            <h2 className="text-sm font-bold text-slate-900">Skipped Files & Unmatched Collections</h2>
-            <ul className="mt-3 divide-y divide-slate-100 text-xs">
+          <section className="card skipped">
+            <h2>Skipped Files &amp; Unmatched Collections</h2>
+            <ul className="m-0 list-none p-0">
               {skipped.map((file) => (
-                <li key={file.fileName} className="flex flex-col gap-1 py-2.5 sm:flex-row sm:justify-between">
-                  <span className="font-semibold text-slate-800">{file.fileName}</span>
-                  <span className="text-slate-500">{file.reason}</span>
+                <li key={file.fileName}>
+                  <span className="font-medium">{file.fileName}</span>
+                  <span className="muted">{file.reason}</span>
                 </li>
               ))}
             </ul>
@@ -776,15 +823,6 @@ export default function App() {
           history={historyList}
           loading={historyLoading}
           onClose={() => setHistoryTarget(null)}
-        />
-      )}
-
-      {selected && (
-        <Drawer
-          collection={selected}
-          result={result}
-          loading={resultLoading}
-          onClose={() => setSelected(null)}
         />
       )}
 

@@ -1,9 +1,101 @@
 @import "tailwindcss";
+@import "./design.css" layer(components);
 
+/* Palette from the UI/UX design (IUDX.html). Tailwind's default scales are
+   remapped so existing utility classes pick up the new colors:
+   slate = warm neutrals, sky = orange accent, emerald = pass, rose = fail,
+   amber = warn, purple = violet, cyan = info blue. */
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Outfit", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --color-canvas: #f7f6f4;
+
+  --color-slate-50: #faf9f7;
+  --color-slate-100: #f2f0ec;
+  --color-slate-200: #ece9e4;
+  --color-slate-300: #ddd9d2;
+  --color-slate-400: #aeaba4;
+  --color-slate-500: #8f8c85;
+  --color-slate-600: #6e6c66;
+  --color-slate-700: #5c5a55;
+  --color-slate-800: #353432;
+  --color-slate-900: #1e1e1c;
+  --color-slate-950: #151514;
+
+  --color-sky-50: #fef6f2;
+  --color-sky-100: #fceee8;
+  --color-sky-200: #f9d9cb;
+  --color-sky-300: #f4b9a1;
+  --color-sky-400: #ee9070;
+  --color-sky-500: #ea7550;
+  --color-sky-600: #e8673d;
+  --color-sky-700: #c2502a;
+  --color-sky-800: #a0411f;
+  --color-sky-900: #7e3419;
+  --color-sky-950: #4a1e0e;
+
+  --color-emerald-50: #f0f9f4;
+  --color-emerald-100: #e6f4ec;
+  --color-emerald-200: #c3e5d2;
+  --color-emerald-300: #93d0af;
+  --color-emerald-400: #5bb487;
+  --color-emerald-500: #2f9c6a;
+  --color-emerald-600: #1e8a5a;
+  --color-emerald-700: #1a774e;
+  --color-emerald-800: #166341;
+  --color-emerald-900: #124f34;
+  --color-emerald-950: #0a2e1f;
+
+  --color-rose-50: #fef5f5;
+  --color-rose-100: #fcebec;
+  --color-rose-200: #f7cdd0;
+  --color-rose-300: #f0a5ab;
+  --color-rose-400: #e5727b;
+  --color-rose-500: #db4f5a;
+  --color-rose-600: #d13c48;
+  --color-rose-700: #b3303b;
+  --color-rose-800: #932731;
+  --color-rose-900: #741f27;
+  --color-rose-950: #440f14;
+
+  --color-amber-50: #fdf8ee;
+  --color-amber-100: #fbf1df;
+  --color-amber-200: #f5ddb0;
+  --color-amber-300: #edc47a;
+  --color-amber-400: #dca147;
+  --color-amber-500: #c4851f;
+  --color-amber-600: #a86a12;
+  --color-amber-700: #8c5710;
+  --color-amber-800: #70450e;
+  --color-amber-900: #5a380c;
+  --color-amber-950: #331f06;
+
+  --color-purple-50: #f8f5fd;
+  --color-purple-100: #f1ecfb;
+  --color-purple-200: #ddd2f5;
+  --color-purple-300: #c2b0ec;
+  --color-purple-400: #a084de;
+  --color-purple-500: #8665d1;
+  --color-purple-600: #7550c6;
+  --color-purple-700: #6141a8;
+  --color-purple-800: #4f3588;
+  --color-purple-900: #3e2a6b;
+  --color-purple-950: #24183f;
+
+  --color-cyan-50: #f4f7fd;
+  --color-cyan-100: #eaf0fb;
+  --color-cyan-200: #ccdaf5;
+  --color-cyan-300: #a3bcec;
+  --color-cyan-400: #6e93de;
+  --color-cyan-500: #4a77d5;
+  --color-cyan-600: #3566cf;
+  --color-cyan-700: #2b53aa;
+  --color-cyan-800: #234487;
+  --color-cyan-900: #1c366b;
+  --color-cyan-950: #0f1e3d;
 }
 
-html { background: #ffffff; }
-body { margin: 0; background: #ffffff; }
+html { background: var(--color-canvas); }
+body { margin: 0; background: var(--color-canvas); color: var(--color-slate-900); }
 button, input, select { font: inherit; }

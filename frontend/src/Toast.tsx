@@ -21,6 +21,21 @@ function notify() {
   toastListeners.forEach((listener) => listener(current));
 }
 
+const toastStyles: Record<ToastType, { container: string; dismiss: string }> = {
+  success: {
+    container: "border-emerald-300 bg-emerald-50 text-emerald-950 ring-1 ring-emerald-500/15",
+    dismiss: "text-emerald-700 hover:text-emerald-950 hover:bg-emerald-200/50",
+  },
+  error: {
+    container: "border-rose-300 bg-rose-50 text-rose-950 ring-1 ring-rose-500/15",
+    dismiss: "text-rose-700 hover:text-rose-950 hover:bg-rose-200/50",
+  },
+  info: {
+    container: "border-sky-300 bg-sky-50 text-sky-950 ring-1 ring-sky-500/15",
+    dismiss: "text-sky-700 hover:text-sky-950 hover:bg-sky-200/50",
+  },
+};
+
 export const toast = {
   show: (type: ToastType, message: string, duration = 4000): string => {
     const id = Math.random().toString(36).slice(2, 9);
@@ -108,13 +123,7 @@ export function ToastContainer() {
             key={t.id}
             role={isError ? "alert" : "status"}
             aria-atomic="true"
-            className={`pointer-events-auto flex items-start gap-3 rounded-xl border p-4 shadow-xl transition-all duration-200 ${
-              isSuccess
-                ? "border-emerald-300 bg-emerald-50 text-emerald-950 ring-1 ring-emerald-500/15"
-                : isError
-                ? "border-rose-300 bg-rose-50 text-rose-950 ring-1 ring-rose-500/15"
-                : "border-sky-300 bg-sky-50 text-sky-950 ring-1 ring-sky-500/15"
-            }`}
+            className={`pointer-events-auto flex items-start gap-3 rounded-xl border p-4 shadow-xl transition-all duration-200 ${toastStyles[t.type].container}`}
           >
             {isSuccess && (
               <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-200/80 text-emerald-700">
@@ -183,13 +192,7 @@ export function ToastContainer() {
               type="button"
               onClick={() => dismiss(t.id)}
               aria-label="Dismiss notification"
-              className={`shrink-0 rounded-md p-1 transition-colors cursor-pointer ${
-                isSuccess
-                  ? "text-emerald-700 hover:text-emerald-950 hover:bg-emerald-200/50"
-                  : isError
-                  ? "text-rose-700 hover:text-rose-950 hover:bg-rose-200/50"
-                  : "text-sky-700 hover:text-sky-950 hover:bg-sky-200/50"
-              }`}
+              className={`shrink-0 rounded-md p-1 transition-colors cursor-pointer ${toastStyles[t.type].dismiss}`}
             >
               <svg
                 className="h-4 w-4"
