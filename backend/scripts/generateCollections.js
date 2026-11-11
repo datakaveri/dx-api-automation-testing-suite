@@ -59,11 +59,11 @@ function makeReq(name, method, rawUrl, expectedStatus = 200, bodyObj = null, cus
   return item;
 }
 
-// 1. DX-Data-Plane SIRPI
+// 1. DX-Data-Plane
 const dxDataPlane = {
   info: {
     _postman_id: "cb423c0e-f868-45ce-8980-b75add3428c4",
-    name: "DX-Data-Plane SIRPI",
+    name: "DX-Data-Plane",
     schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   item: [
@@ -71,7 +71,7 @@ const dxDataPlane = {
       name: "Token",
       item: [
         makeReq("Consumer Token", "POST", "https://{{keycloak-url}}/auth/realms/iudx-v2/protocol/openid-connect/token", 200),
-        makeReq("Generate Client id and Client Secret", "POST", "https://{{data-plane-url}}/controlplane/iudx/v2/auth/client", 200, { client_name: "sirpi-client", roles: ["consumer"] }),
+        makeReq("Generate Client id and Client Secret", "POST", "https://{{data-plane-url}}/controlplane/iudx/v2/auth/client", 200, { client_name: "dx-client", roles: ["consumer"] }),
         makeReq("AAA Token", "POST", "https://{{data-plane-url}}/controlplane/iudx/v2/auth/token", 200, { itemId: "resource-01", itemType: "resource", role: "consumer" }),
         makeReq("Introspect Token", "POST", "https://{{keycloak-url}}/auth/realms/iudx-v2/protocol/openid-connect/token/introspect", 200, { token: "{{consumerToken}}" }),
         makeReq("Refresh Consumer Token", "POST", "https://{{keycloak-url}}/auth/realms/iudx-v2/protocol/openid-connect/token", 200, { grant_type: "refresh_token" }),
@@ -347,16 +347,16 @@ const controlPlane = {
         makeReq("Register New Provider Entity", "POST", "https://{{control-plane-url}}/org/v2/providers", 201, { orgName: "Bangalore Smart City Ltd", website: "https://smartcity.blr.gov.in" }),
         makeReq("Update Provider Information", "PATCH", "https://{{control-plane-url}}/org/v2/providers/provider-iudx", 200, { contactEmail: "ops@blr.gov.in" }),
         makeReq("List Data Consumers", "GET", "https://{{control-plane-url}}/org/v2/consumers", 200),
-        makeReq("Get Consumer Organization Details", "GET", "https://{{control-plane-url}}/org/v2/consumers/consumer-sirpi", 200),
-        makeReq("Register New Consumer Entity", "POST", "https://{{control-plane-url}}/org/v2/consumers", 201, { orgName: "SIRPI Data Research", email: "info@sirpi.io" }),
-        makeReq("Get Organization Quota Limits", "GET", "https://{{control-plane-url}}/org/v2/quota/consumer-sirpi", 200),
-        makeReq("Update Quota Allocation", "PUT", "https://{{control-plane-url}}/org/v2/quota/consumer-sirpi", 200, { maxRequestsPerDay: 100000, bandwidthGb: 50 }),
-        makeReq("Get Organization API Usage Metrics", "GET", "https://{{control-plane-url}}/org/v2/metrics/consumer-sirpi?period=30d", 200),
-        makeReq("List Organization Sub-Accounts", "GET", "https://{{control-plane-url}}/org/v2/consumers/consumer-sirpi/subaccounts", 200),
-        makeReq("Create Sub-Account", "POST", "https://{{control-plane-url}}/org/v2/consumers/consumer-sirpi/subaccounts", 201, { accountName: "Dev-Team-01" }),
-        makeReq("Deactivate Sub-Account", "POST", "https://{{control-plane-url}}/org/v2/consumers/consumer-sirpi/subaccounts/sub-001/deactivate", 200),
-        makeReq("Get Current Billing Summary", "GET", "https://{{control-plane-url}}/org/v2/billing/consumer-sirpi/current", 200),
-        makeReq("List Past Invoices", "GET", "https://{{control-plane-url}}/org/v2/billing/consumer-sirpi/invoices", 200),
+        makeReq("Get Consumer Organization Details", "GET", "https://{{control-plane-url}}/org/v2/consumers/consumer-dx", 200),
+        makeReq("Register New Consumer Entity", "POST", "https://{{control-plane-url}}/org/v2/consumers", 201, { orgName: "DX Data Research", email: "info@example.org" }),
+        makeReq("Get Organization Quota Limits", "GET", "https://{{control-plane-url}}/org/v2/quota/consumer-dx", 200),
+        makeReq("Update Quota Allocation", "PUT", "https://{{control-plane-url}}/org/v2/quota/consumer-dx", 200, { maxRequestsPerDay: 100000, bandwidthGb: 50 }),
+        makeReq("Get Organization API Usage Metrics", "GET", "https://{{control-plane-url}}/org/v2/metrics/consumer-dx?period=30d", 200),
+        makeReq("List Organization Sub-Accounts", "GET", "https://{{control-plane-url}}/org/v2/consumers/consumer-dx/subaccounts", 200),
+        makeReq("Create Sub-Account", "POST", "https://{{control-plane-url}}/org/v2/consumers/consumer-dx/subaccounts", 201, { accountName: "Dev-Team-01" }),
+        makeReq("Deactivate Sub-Account", "POST", "https://{{control-plane-url}}/org/v2/consumers/consumer-dx/subaccounts/sub-001/deactivate", 200),
+        makeReq("Get Current Billing Summary", "GET", "https://{{control-plane-url}}/org/v2/billing/consumer-dx/current", 200),
+        makeReq("List Past Invoices", "GET", "https://{{control-plane-url}}/org/v2/billing/consumer-dx/invoices", 200),
         makeReq("Download Invoice PDF", "GET", "https://{{control-plane-url}}/org/v2/billing/invoices/inv-2026-06/pdf", 200),
         makeReq("401 Provider Management Unauth", "GET", "https://{{control-plane-url}}/org/v2/providers", 401),
         makeReq("404 Provider Not Found", "GET", "https://{{control-plane-url}}/org/v2/providers/provider-nonexistent", 404),
@@ -711,7 +711,7 @@ const asyncIngestion = {
 };
 
 const collections = [
-  { file: "DX-Data-Plane SIRPI.postman_collection (3).json", data: dxDataPlane },
+  { file: "DX-Data-Plane.postman_collection (3).json", data: dxDataPlane },
   { file: "Control Plane IUDX.postman_collection.json", data: controlPlane },
   { file: "Files Connect API.postman_collection.json", data: filesConnect },
   { file: "OGC Geospatial Server.postman_collection.json", data: ogcGeospatial },

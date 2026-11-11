@@ -59,11 +59,11 @@ function makeReq(name, method, rawUrl, expectedStatus = 200, bodyObj = null, cus
   return item;
 }
 
-// 1. DX-Data-Plane SIRPI
+// 1. DX-Data-Plane
 const dxDataPlane = {
   info: {
     _postman_id: "cb423c0e-f868-45ce-8980-b75add3428c4",
-    name: "DX-Data-Plane SIRPI",
+    name: "DX-Data-Plane",
     schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     _exporter_id: "44150667"
   },
@@ -72,7 +72,7 @@ const dxDataPlane = {
       name: "Token",
       item: [
         makeReq("Consumer Token", "POST", "https://{{keycloak-url}}/auth/realms/iudx-v2/protocol/openid-connect/token", 200),
-        makeReq("Generate Client id and Client Secret", "POST", "https://{{data-plane-url}}/controlplane/iudx/v2/auth/client", 200, { client_name: "sirpi-client", roles: ["consumer"] }),
+        makeReq("Generate Client id and Client Secret", "POST", "https://{{data-plane-url}}/controlplane/iudx/v2/auth/client", 200, { client_name: "dx-client", roles: ["consumer"] }),
         makeReq("AAA Token", "POST", "https://{{data-plane-url}}/controlplane/iudx/v2/auth/token", 200, { itemId: "resource-01", itemType: "resource", role: "consumer" })
       ]
     },
@@ -290,7 +290,7 @@ const filesConnect = {
   ]
 };
 
-fs.writeFileSync(path.join(collectionsDir, "DX-Data-Plane SIRPI.postman_collection (3).json"), JSON.stringify(dxDataPlane, null, 2), "utf8");
+fs.writeFileSync(path.join(collectionsDir, "DX-Data-Plane.postman_collection (3).json"), JSON.stringify(dxDataPlane, null, 2), "utf8");
 fs.writeFileSync(path.join(collectionsDir, "Files Connect API.postman_collection.json"), JSON.stringify(filesConnect, null, 2), "utf8");
 
-console.log("Successfully updated DX-Data-Plane SIRPI and Files Connect API collections!");
+console.log("Successfully updated DX-Data-Plane and Files Connect API collections!");

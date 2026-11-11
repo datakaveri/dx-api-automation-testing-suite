@@ -1,8 +1,8 @@
 {
   "info": {
     "_postman_id": "e4653954-9133-4368-97d3-d465613a3981",
-    "name": "OGC_API_Tests-SIRPI",
-    "description": "Reorganised from 'OGC SIRPI Copy'. Run with the 'OGC SIRPI - DEV' environment. Order (per dev team): 00 Auth → 01 Process API → 02 Features API → 03 Feature onboarding → 04 STAC API → 05 STAC onboarding → 06-08 Maps & Tiles / Coverages / Records (any order once onboarding is done).",
+    "name": "OGC_API_Tests",
+    "description": "Run with the 'OGC - DEV' environment. Order (per dev team): 00 Auth → 01 Process API → 02 Features API → 03 Feature onboarding → 04 STAC API → 05 STAC onboarding → 06-08 Maps & Tiles / Coverages / Records (any order once onboarding is done).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "44150667",
     "_collection_link": "https://go.postman.co/collection/44150667-e4653954-9133-4368-97d3-d465613a3981?source=collection_link"

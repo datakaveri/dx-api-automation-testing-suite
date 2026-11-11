@@ -28,6 +28,8 @@ Environment notes, established by es_kibana_diagnostic.py:
   * Index names use a DOUBLE underscore: iudx-v2__<exchange_name>.
 """
 
+import os
+import re
 import sys
 import logging
 import argparse
@@ -79,6 +81,17 @@ REQUIRED = {
 }
 
 
+_ENV_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
+
+
+def expand_env(value):
+    """Resolve ${VAR} / ${VAR:-fallback} in one config value."""
+    return _ENV_REF.sub(
+        lambda m: os.environ.get(m.group(1), m.group(2) if m.group(2) is not None else ""),
+        value,
+    )
+
+
 def load_config(path):
     """
     Read and validate the INI. Every required key is checked up
@@ -99,6 +112,13 @@ def load_config(path):
 
         logger.error(f"Invalid INI in {path}: {error}")
         sys.exit(EXIT_CONFIG)
+
+    # Fill ${VAR} / ${VAR:-fallback} from the environment (.env), the same
+    # syntax the other cleanup scripts use. An unset variable becomes empty,
+    # so the checks below report it before anything is deleted.
+    for section in parser.sections():
+        for key, value in parser.items(section):
+            parser.set(section, key, expand_env(value))
 
     problems = []
 

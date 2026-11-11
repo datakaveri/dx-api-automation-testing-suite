@@ -12,11 +12,11 @@
     "timeout_seconds": 30,
     "verify_tls": true,
     "admin_client_id": "",
-    "admin_client_secret": "${KC_ADMIN_SECRET:-}"
+    "admin_client_secret": "${ORG_DEL_KC_ADMIN_CLIENT_SECRET:-}"
   },
   "actor": {
     "username": "<org-admin-or-cos-admin-username>",
-    "password": "${ACTOR_PASS:-}",
+    "password": "${ORG_DEL_ACTOR_PASSWORD:-}",
     "token": ""
   },
   "postgres": {

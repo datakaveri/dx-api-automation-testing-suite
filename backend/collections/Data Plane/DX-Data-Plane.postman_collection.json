@@ -1,7 +1,7 @@
 {
   "info": {
     "_postman_id": "4f2de20e-577c-41fb-b4d4-4233545bf686",
-    "name": "DX-Data-Plane SIRPI",
+    "name": "DX-Data-Plane",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "58277209",
     "_collection_link": "https://go.postman.co/collection/58277209-4f2de20e-577c-41fb-b4d4-4233545bf686?source=collection_link"
