@@ -431,12 +431,13 @@ All settings come from `.env` (see [`.env.example`](.env.example) for the full, 
 
 **Test and cleanup secrets.** Each is used by one or more suites or scripts, as grouped in `.env.example`:
 
-- `COS_ADMIN_PASSWORD`: shared COS admin password
-- `CP_*`: Control Plane suite (client secrets, user passwords)
-- `DP_*`: Data Plane suite
-- `FC_*`: File Connect suite
-- `SC_*`: Sandbox Connect suite
-- `ORG_DEL_*`, `CP_PG_PASSWORD`, `KC_ADMIN_CLIENT_SECRET`, `CC_TARGET_PASSWORD`, `PP_*`: cleanup scripts
+- `COS_ADMIN_USER`, `COS_ADMIN_PASSWORD`: shared COS admin login
+- `CP_*`: Control Plane suite (test users, their passwords, client secrets)
+- `OGC_*`: OGC suite (test users, their passwords) and OGC S3 cleanup
+- `DP_*`: Data Plane suite (test user, its password, client secrets)
+- `FC_*`: File Connect suite (test users, their passwords)
+- `SC_*`: Sandbox Connect suite (test user, its password, tokens)
+- `PG_PASS`, `KC_ADMIN_CLIENT_SECRET`, `CLEANUP_COS_ADMIN_PASSWORD`, `ORG_DEL_*`, `CC_TARGET_PASSWORD`, `PP_CLEANUP_*`: cleanup scripts (each maps to a field in that script's `*_config.json`)
 - `NGSILD_*`: NGSI-LD cleanup (Kibana and RabbitMQ)
 
 ---

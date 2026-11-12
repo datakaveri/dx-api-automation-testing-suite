@@ -59,11 +59,11 @@ function makeReq(name, method, rawUrl, expectedStatus = 200, bodyObj = null, cus
   return item;
 }
 
-// DX-Data-Plane SIRPI matching EXACT names from Postman screenshots
+// DX-Data-Plane matching EXACT names from Postman screenshots
 const dxDataPlane = {
   info: {
     _postman_id: "cb423c0e-f868-45ce-8980-b75add3428c4",
-    name: "DX-Data-Plane SIRPI",
+    name: "DX-Data-Plane",
     schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     _exporter_id: "44150667"
   },
@@ -72,7 +72,7 @@ const dxDataPlane = {
       name: "Token",
       item: [
         makeReq("Consumer Token", "POST", "https://{{keycloak-url}}/auth/realms/iudx-v2/protocol/openid-connect/token", 200),
-        makeReq("Generate Client id and Client Secret", "POST", "https://{{data-plane-url}}/controlplane/iudx/v2/auth/client", 200, { client_name: "sirpi-client", roles: ["consumer"] }),
+        makeReq("Generate Client id and Client Secret", "POST", "https://{{data-plane-url}}/controlplane/iudx/v2/auth/client", 200, { client_name: "dx-client", roles: ["consumer"] }),
         makeReq("AAA Token", "POST", "https://{{data-plane-url}}/controlplane/iudx/v2/auth/token", 200, { itemId: "resource-01", itemType: "resource", role: "consumer" })
       ]
     },
@@ -181,6 +181,6 @@ const dxDataPlane = {
   ]
 };
 
-const filePath = path.join(collectionsDir, "DX-Data-Plane SIRPI.postman_collection (3).json");
+const filePath = path.join(collectionsDir, "DX-Data-Plane.postman_collection (3).json");
 fs.writeFileSync(filePath, JSON.stringify(dxDataPlane, null, 2), "utf8");
-console.log("Successfully synced DX-Data-Plane SIRPI collection with exact Postman hierarchy!");
+console.log("Successfully synced DX-Data-Plane collection with exact Postman hierarchy!");

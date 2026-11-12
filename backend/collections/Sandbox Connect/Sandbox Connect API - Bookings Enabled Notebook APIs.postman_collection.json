@@ -553,8 +553,8 @@
 									"        pm.expect(s.availableSlots, s.key).to.eql(s.totalSlots - s.bookedSlots);",
 									"    });",
 									"});",
-									"// First slot this user can still book on slot_date; Create Booking requests book it.",
-									"const free = (body.slots || []).find(s => s.availability === \"available\" && !s.alreadyBooked);",
+									"// First slot this user can still book on slot_date, skipping the slot in progress (Create Active Booking books that one); Create Booking requests book it.",
+									"const free = (body.slots || []).find(s => s.availability === \"available\" && !s.alreadyBooked && !(pm.variables.get(\"slot_date\") === pm.variables.get(\"current_slot_date\") && s.key === pm.variables.get(\"current_slot_key\")));",
 									"pm.variables.set(\"free_slot_key\", free ? free.key : \"\");"
 								]
 							}

@@ -10,13 +10,13 @@
     "user_client_id": "postman-client",
     "user_client_secret": "",
     "admin_client_id": "",
-    "admin_client_secret": "${KC_ADMIN_SECRET:-}",
+    "admin_client_secret": "${KC_ADMIN_CLIENT_SECRET:-}",
     "timeout_seconds": 30,
     "verify_tls": true
   },
   "target": {
     "username": "",
-    "password": "${CONSUMER_PASS:-}",
+    "password": "${CC_TARGET_PASSWORD:-}",
     "user_id": "",
     "token": "",
     "input_file": "",
@@ -25,7 +25,7 @@
   "actors": {
     "cos_admin": {
       "username": "",
-      "password": "${COS_ADMIN_PASS:-}",
+      "password": "${CLEANUP_COS_ADMIN_PASSWORD:-}",
       "token": ""
     }
   },
@@ -53,7 +53,7 @@
     "database": "",
     "schema": "aaa",
     "user": "",
-    "password": "",
+    "password": "${PG_PASS:-}",
     "sslmode": "require",
     "connect_timeout_seconds": 10
   },
