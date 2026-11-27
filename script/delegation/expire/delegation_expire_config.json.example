@@ -1,0 +1,60 @@
+{
+  "postgres": {
+    "host": "<postgres-host>",
+    "port": 5432,
+    "database": "iudx_v2_auth",
+    "schema": "aaa",
+    "user": "<db-user>",
+    "password": "${DELEGATION_EXPIRE_PG_PASS:-}",
+    "sslmode": "require",
+    "connect_timeout_seconds": 10
+  },
+  "target": {
+    "delegation_ids": []
+  },
+  "expiry": {
+    "at": "now",
+    "offset_seconds": 0
+  },
+  "checks": {
+    "require_grant_status": [
+      "active"
+    ],
+    "require_constraints": false,
+    "refuse_future_expiry": true,
+    "max_unique_steps": 1000
+  },
+  "steps": {
+    "grant": true,
+    "scope_constraints": true
+  },
+  "tables": {
+    "grant": "delegation_grants",
+    "constraint": "delegation_scope_constraints",
+    "update_request": "delegation_update_requests"
+  },
+  "columns": {
+    "grant_id": "delegation_id",
+    "grant_delegator": "delegator_id",
+    "grant_delegate": "delegate_id",
+    "grant_justification": "justification",
+    "grant_status": "status",
+    "grant_expiry": "expiry_at",
+    "grant_created": "created_at",
+    "constraint_id": "id",
+    "constraint_delegation_id": "delegation_id",
+    "constraint_role": "role",
+    "constraint_scope": "scope",
+    "constraint_entity_id": "entity_id",
+    "constraint_entity_type": "entity_type",
+    "constraint_expiry": "expiry_at",
+    "ureq_id": "request_id",
+    "ureq_delegation_id": "delegation_id",
+    "ureq_status": "status",
+    "ureq_requested_expiry": "requested_expiry"
+  },
+  "logging": {
+    "level": "INFO",
+    "print_sql": true
+  }
+}

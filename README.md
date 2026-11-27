@@ -170,6 +170,7 @@ script/sandbox/                     sandbox server checks
 script/community-layer/             community layer checks
 script/user_creation/               standalone create/delete scripts per user role
 script/challenge/                   standalone challenge scripts: create, set times, delete
+script/delegation/                  standalone script: expire an active delegation now
 
 docs/sandbox.md                     what the sandbox check covers, and cannot
 docs/community-layer.md             the same for the community layer
